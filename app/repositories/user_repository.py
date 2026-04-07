@@ -1,0 +1,110 @@
+# Repositorio de acceso a datos para el registro de usuarios.
+
+from sqlalchemy.orm import Session
+
+from app.models.user import Cliente, Rol, RolUsuario, Taller, Tecnico, Usuario
+
+
+class UserRepository:
+    # Encapsula lecturas/escrituras SQL para mantener la logica de negocio limpia.
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_user_by_email(self, email: str) -> Usuario | None:
+        # Busca usuario por correo para validar precondicion de unicidad.
+        return self.db.query(Usuario).filter(Usuario.correo == email).first()
+
+    def create_user(
+        self,
+        *,
+        nombre: str,
+        correo: str,
+        contrasena_hash: str,
+        telefono: str | None,
+    ) -> Usuario:
+        # Crea el registro principal en tabla usuario.
+        user = Usuario(
+            nombre=nombre.strip(),
+            correo=correo.strip().lower(),
+            contrasena_hash=contrasena_hash,
+            telefono=telefono.strip() if telefono else None,
+        )
+        self.db.add(user)
+        self.db.flush()
+        return user
+
+    def get_or_create_role(self, role_name: str, description: str) -> Rol:
+        # Obtiene rol existente o lo crea para soportar entornos vacios.
+        role = self.db.query(Rol).filter(Rol.nombre == role_name).first()
+        if role:
+            return role
+
+        role = Rol(nombre=role_name, descripcion=description)
+        self.db.add(role)
+        self.db.flush()
+        return role
+
+    def assign_role_to_user(self, user_id: int, role_id: int) -> None:
+        # Asocia usuario y rol en tabla puente rol_usuario.
+        exists = (
+            self.db.query(RolUsuario)
+            .filter(
+                RolUsuario.usuario_id == user_id,
+                RolUsuario.rol_id == role_id,
+            )
+            .first()
+        )
+        if exists:
+            return
+
+        self.db.add(RolUsuario(usuario_id=user_id, rol_id=role_id))
+        self.db.flush()
+
+    def create_cliente_profile(self, user_id: int) -> None:
+        # Crea especializacion de usuario como cliente.
+        self.db.add(Cliente(id=user_id))
+        self.db.flush()
+
+    def create_taller_profile(self, user_id: int, workshop_name: str, workshop_location: str | None) -> None:
+        # Crea especializacion de usuario como taller.
+        self.db.add(
+            Taller(
+                id=user_id,
+                nombre=workshop_name.strip(),
+                ubicacion=workshop_location.strip() if workshop_location else None,
+                estado="activo",
+            )
+        )
+        self.db.flush()
+
+    def create_tecnico_profile(self, user_id: int, estado: str = "disponible") -> None:
+        # Crea especializacion de usuario como tecnico para uso futuro en modulo web.
+        exists = self.db.query(Tecnico).filter(Tecnico.id == user_id).first()
+        if exists:
+            return
+
+        self.db.add(Tecnico(id=user_id, estado=estado))
+        self.db.flush()
+
+    def get_role_names_by_user_id(self, user_id: int) -> set[str]:
+        # Obtiene todos los nombres de rol asociados al usuario autenticado.
+        rows = (
+            self.db.query(Rol.nombre)
+            .join(RolUsuario, RolUsuario.rol_id == Rol.id)
+            .filter(RolUsuario.usuario_id == user_id)
+            .all()
+        )
+        return {name for (name,) in rows}
+
+    def get_specialization_flags(self, user_id: int) -> dict[str, bool]:
+        # Permite separar acceso por tipo de actor sin depender solo del catalogo de roles.
+        is_cliente = self.db.query(Cliente.id).filter(Cliente.id == user_id).first() is not None
+        is_taller = self.db.query(Taller.id).filter(Taller.id == user_id).first() is not None
+        is_tecnico = self.db.query(Tecnico.id).filter(Tecnico.id == user_id).first() is not None
+
+        return {
+            "cliente": is_cliente,
+            "taller": is_taller,
+            "tecnico": is_tecnico,
+        }
