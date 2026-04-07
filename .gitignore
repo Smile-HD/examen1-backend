@@ -1,9 +1,24 @@
 # Python / Backend
-/.venv/
-/__pycache__/
-/**/*.pyc
-/.pytest_cache/
-/.mypy_cache/
-/.ruff_cache/
-/.coverage
-/.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Entorno local
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Bases locales temporales
+*.sqlite
+*.sqlite3
