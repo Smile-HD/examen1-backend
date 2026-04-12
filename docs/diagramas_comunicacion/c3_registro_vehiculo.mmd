@@ -1,0 +1,21 @@
+sequenceDiagram
+    actor Cliente
+    participant UI as VehicleRegistrationScreen\nmobile/lib/vehicle_registration_screen.dart
+    participant API as vehicles.py -> vehicle_controller.py
+    participant S as vehicle_service.py\nregister_vehicle()
+    participant R as vehicle_repository.py\nVehicleRepository
+    participant TA as Tabla cliente
+    participant TB as Tabla vehiculo
+
+    Cliente->>UI: 1. Ingresa datos del vehiculo
+    UI->>API: 1.1 POST /api/v1/vehiculos/registro + Bearer JWT
+    API->>API: 1.2 require_mobile_cliente valida token y rol
+    API->>S: 1.3 register_vehicle(payload, cliente_id)
+    S->>R: 1.4 get_by_plate(placa)
+    R->>TB: 1.5 SELECT vehiculo por placa
+    S->>R: 1.6 create(...)
+    R->>TA: 1.7 valida FK cliente_id
+    R->>TB: 1.8 INSERT vehiculo
+    S-->>API: 1.9 Vehiculo registrado
+    API-->>UI: 2.0 201 Created
+    UI-->>Cliente: 2.1 Mostrar confirmacion

@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Cliente
+    participant UI as RegisterScreen\nmobile/lib/register_screen.dart
+    participant API as users.py -> user_controller.py
+    participant S as user_service.py\nregister_user()
+    participant R as user_repository.py\nUserRepository
+    participant T1 as Tabla usuario
+    participant T2 as Tabla rol
+    participant T3 as Tabla rol_usuario
+    participant T4 as Tabla cliente/taller
+
+    Cliente->>UI: 1. Completa formulario de registro
+    UI->>API: 1.1 POST /api/v1/usuarios/registro
+    API->>S: 1.2 register_user(payload)
+    S->>R: 1.3 get_user_by_email(correo)
+    R->>T1: 1.4 SELECT usuario por correo
+    S->>R: 1.5 create_user(...)
+    R->>T1: 1.6 INSERT usuario
+    S->>R: 1.7 get_or_create_role(...)
+    R->>T2: 1.8 SELECT/INSERT rol
+    S->>R: 1.9 assign_role_to_user(...)
+    R->>T3: 2.0 INSERT rol_usuario
+    S->>R: 2.1 create_cliente_profile() o create_taller_profile()
+    R->>T4: 2.2 INSERT cliente o taller
+    S-->>API: 2.3 Registro exitoso
+    API-->>UI: 2.4 201 Created
+    UI-->>Cliente: 2.5 Mostrar mensaje de exito

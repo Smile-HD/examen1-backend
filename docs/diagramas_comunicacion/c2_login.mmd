@@ -1,0 +1,27 @@
+sequenceDiagram
+    actor Actor as Cliente/Taller/Tecnico
+    participant UI as LoginScreen\nmobile/lib/login_screen.dart
+    participant API as auth.py -> auth_controller.py
+    participant S as auth_service.py\nauthenticate_user()
+    participant R as user_repository.py\nUserRepository
+    participant T1 as Tabla usuario
+    participant T2 as Tabla rol
+    participant T3 as Tabla rol_usuario
+    participant T4 as Tabla cliente/taller/tecnico
+
+    Actor->>UI: 1. Ingresa correo y password
+    UI->>API: 1.1 POST /api/v1/auth/login (canal)
+    API->>S: 1.2 authenticate_user(data)
+    S->>R: 1.3 get_user_by_email(correo)
+    R->>T1: 1.4 SELECT usuario
+    S->>S: 1.5 verify_password(hash)
+    S->>R: 1.6 get_role_names_by_user_id(user.id)
+    R->>T2: 1.7 JOIN rol
+    R->>T3: 1.8 JOIN rol_usuario
+    S->>R: 1.9 get_specialization_flags(user.id)
+    R->>T4: 2.0 SELECT cliente/taller/tecnico
+    S->>S: 2.1 valida canal mobile/web por rol
+    S->>S: 2.2 create_access_token(JWT)
+    S-->>API: 2.3 Respuesta de login
+    API-->>UI: 2.4 200 OK + token
+    UI-->>Actor: 2.5 Mostrar exito y navegar
