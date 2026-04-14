@@ -14,10 +14,8 @@ app.add_middleware(
 	allow_origins=[
 		"http://localhost:4200",
 		"http://127.0.0.1:4200",
-		"https://examen1-frontend.vercel.app",
-		"*" # Permite cualquiera temporalmente si las credenciales están en False (pero tienes True)
+		"https://examen1-frontend.vercel.app"
 	],
-	allow_origin_regex=r"https://.*\.vercel\.app",
 	allow_credentials=True,
 	allow_methods=["*"],
 	allow_headers=["*"],
