@@ -1,9 +1,14 @@
 # Servicio de negocio para gestion de tecnicos y unidades del taller.
 
+import re
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.workshop_schemas import (
+    WorkshopProfileResponse,
+    WorkshopProfileUpdateRequest,
+    WorkshopServiceItemResponse,
     WorkshopTechnicianAssignResponse,
     WorkshopTechnicianCandidateResponse,
     WorkshopTechnicianListItemResponse,
@@ -52,6 +57,75 @@ class WorkshopVehicleNotFoundError(Exception):
     pass
 
 
+class WorkshopProfileNotFoundError(Exception):
+    # Error cuando no existe perfil taller para el usuario autenticado.
+    pass
+
+
+class InvalidWorkshopServiceSelectionError(Exception):
+    # Error cuando se intenta guardar servicios inexistentes.
+    pass
+
+
+_LOCATION_COORDS_PATTERN = re.compile(
+    r"\(lat:\s*(-?\d+(?:\.\d+)?)\s*,\s*lng:\s*(-?\d+(?:\.\d+)?)\)",
+    flags=re.IGNORECASE,
+)
+
+_DEFAULT_WORKSHOP_SERVICES = [
+    "llanta",
+    "bateria",
+    "motor",
+    "grua",
+    "frenos",
+    "electricidad",
+    "combustible",
+    "cerrajeria",
+]
+
+
+def _ensure_workshop_service_catalog(repository: WorkshopRepository) -> list:
+    # Asegura un catalogo base minimo para que el taller pueda marcar servicios.
+    for raw_name in _DEFAULT_WORKSHOP_SERVICES:
+        name = raw_name.strip().lower()
+        if not repository.get_service_by_name(name):
+            repository.create_service(name)
+    return repository.list_services()
+
+
+def _compose_workshop_location_text(
+    *,
+    ubicacion_texto: str | None,
+    latitud: float | None,
+    longitud: float | None,
+) -> str | None:
+    # Serializa la ubicacion del taller en un formato legible y parseable.
+    text = (ubicacion_texto or "").strip()
+    if latitud is None or longitud is None:
+        return text or None
+
+    coords_text = f"(lat: {latitud:.6f}, lng: {longitud:.6f})"
+    if text:
+        return f"{text} {coords_text}"
+    return coords_text
+
+
+def _parse_workshop_location_text(raw_location: str | None) -> tuple[str | None, float | None, float | None]:
+    # Extrae coordenadas del texto de ubicacion del taller si estan presentes.
+    if not raw_location:
+        return None, None, None
+
+    normalized = raw_location.strip()
+    match = _LOCATION_COORDS_PATTERN.search(normalized)
+    if not match:
+        return normalized or None, None, None
+
+    latitud = float(match.group(1))
+    longitud = float(match.group(2))
+    clean_text = _LOCATION_COORDS_PATTERN.sub("", normalized).strip()
+    return (clean_text or None, latitud, longitud)
+
+
 def search_technicians(
     query: str,
     *,
@@ -69,6 +143,98 @@ def search_technicians(
         )
         for user in users
     ]
+
+
+def get_workshop_profile(
+    *,
+    taller_id: int,
+    db: Session,
+) -> WorkshopProfileResponse:
+    # Recupera perfil del taller y catalogo de servicios disponibles.
+    repository = WorkshopRepository(db)
+    workshop = repository.get_workshop_by_id(taller_id)
+    if not workshop:
+        raise WorkshopProfileNotFoundError("Perfil de taller no encontrado para el usuario autenticado.")
+
+    services = _ensure_workshop_service_catalog(repository)
+    offered_ids = repository.list_workshop_service_ids(taller_id)
+    location_text, latitud, longitud = _parse_workshop_location_text(workshop.ubicacion)
+
+    db.commit()
+
+    return WorkshopProfileResponse(
+        taller_id=workshop.id,
+        nombre_taller=workshop.nombre,
+        ubicacion_texto=location_text,
+        latitud=latitud,
+        longitud=longitud,
+        servicios_catalogo=[
+            WorkshopServiceItemResponse(id=item.id, nombre=item.nombre)
+            for item in services
+        ],
+        servicios_ofrecidos_ids=offered_ids,
+    )
+
+
+def update_workshop_profile(
+    payload: WorkshopProfileUpdateRequest,
+    *,
+    taller_id: int,
+    db: Session,
+) -> WorkshopProfileResponse:
+    # Actualiza nombre/ubicacion y servicios ofrecidos por el taller.
+    repository = WorkshopRepository(db)
+    incident_repository = IncidentRepository(db)
+
+    workshop = repository.get_workshop_by_id(taller_id)
+    if not workshop:
+        raise WorkshopProfileNotFoundError("Perfil de taller no encontrado para el usuario autenticado.")
+
+    services = _ensure_workshop_service_catalog(repository)
+    available_ids = {int(item.id) for item in services}
+
+    requested_ids = [int(service_id) for service_id in payload.servicios_ofrecidos_ids]
+    if any(service_id not in available_ids for service_id in requested_ids):
+        raise InvalidWorkshopServiceSelectionError(
+            "Uno o más servicios seleccionados no existen en el catálogo."
+        )
+
+    previous_name = workshop.nombre
+    previous_location = workshop.ubicacion
+
+    try:
+        new_location = _compose_workshop_location_text(
+            ubicacion_texto=payload.ubicacion_texto,
+            latitud=payload.latitud,
+            longitud=payload.longitud,
+        )
+
+        repository.update_workshop_profile(
+            workshop,
+            nombre=payload.nombre_taller,
+            ubicacion=new_location,
+        )
+        repository.replace_workshop_services(taller_id, requested_ids)
+
+        incident_repository.create_history(
+            incidente_id=None,
+            taller_id=taller_id,
+            cliente_id=None,
+            accion="perfil_taller_actualizado",
+            descripcion=(
+                f"Perfil actualizado: nombre '{previous_name}' -> '{payload.nombre_taller}', "
+                f"ubicacion '{previous_location or '-'}' -> '{new_location or '-'}', "
+                f"servicios={len(requested_ids)}."
+            ),
+            actor_usuario_id=taller_id,
+        )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return get_workshop_profile(taller_id=taller_id, db=db)
 
 def assign_technician_to_workshop(
     usuario_id: int,

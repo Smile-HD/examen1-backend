@@ -125,3 +125,40 @@ class WorkshopTechnicianLocationItem(BaseModel):
     longitud: float | None
     precision_metros: float | None
     actualizada_en: str | None
+
+
+class WorkshopServiceItemResponse(BaseModel):
+    # Servicio disponible para que el taller lo marque como ofrecido.
+
+    id: int
+    nombre: str
+
+
+class WorkshopProfileResponse(BaseModel):
+    # Perfil editable del taller autenticado.
+
+    taller_id: int
+    nombre_taller: str
+    ubicacion_texto: str | None
+    latitud: float | None
+    longitud: float | None
+    servicios_catalogo: list[WorkshopServiceItemResponse]
+    servicios_ofrecidos_ids: list[int]
+
+
+class WorkshopProfileUpdateRequest(BaseModel):
+    # Payload para actualizar perfil y servicios del taller.
+
+    nombre_taller: str = Field(min_length=3, max_length=150)
+    ubicacion_texto: str | None = Field(default=None, max_length=500)
+    latitud: float | None = Field(default=None, ge=-90, le=90)
+    longitud: float | None = Field(default=None, ge=-180, le=180)
+    servicios_ofrecidos_ids: list[int] = Field(default_factory=list)
+
+    @field_validator("nombre_taller", "ubicacion_texto")
+    @classmethod
+    def normalize_profile_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None

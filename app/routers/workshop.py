@@ -7,18 +7,22 @@ from app.controllers.workshop_controller import (
     assign_technician_to_workshop_controller,
     create_workshop_vehicle_controller,
     delete_workshop_vehicle_controller,
+    get_workshop_profile_controller,
     list_workshop_history_controller,
     list_workshop_technician_locations_controller,
     list_workshop_technicians_controller,
     list_workshop_vehicles_controller,
     search_technicians_controller,
     unassign_technician_from_workshop_controller,
+    update_workshop_profile_controller,
     update_workshop_vehicle_controller,
 )
 from app.database import get_db
 from app.dependencies.auth import AuthenticatedUser, require_web_taller
 from app.models.incident_schemas import WorkshopIncidentHistoryResponse
 from app.models.workshop_schemas import (
+    WorkshopProfileResponse,
+    WorkshopProfileUpdateRequest,
     WorkshopTechnicianAssignRequest,
     WorkshopTechnicianAssignResponse,
     WorkshopTechnicianCandidateResponse,
@@ -33,6 +37,37 @@ from app.models.workshop_schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/taller", tags=["Taller"])
+
+
+@router.get(
+    "/perfil",
+    response_model=WorkshopProfileResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_workshop_profile_endpoint(
+    current_user: AuthenticatedUser = Depends(require_web_taller),
+    db: Session = Depends(get_db),
+) -> WorkshopProfileResponse:
+    # Devuelve perfil editable del taller autenticado.
+    return get_workshop_profile_controller(taller_id=current_user.user_id, db=db)
+
+
+@router.put(
+    "/perfil",
+    response_model=WorkshopProfileResponse,
+    status_code=status.HTTP_200_OK,
+)
+def update_workshop_profile_endpoint(
+    payload: WorkshopProfileUpdateRequest,
+    current_user: AuthenticatedUser = Depends(require_web_taller),
+    db: Session = Depends(get_db),
+) -> WorkshopProfileResponse:
+    # Actualiza datos generales y servicios ofrecidos por el taller.
+    return update_workshop_profile_controller(
+        payload,
+        taller_id=current_user.user_id,
+        db=db,
+    )
 
 
 @router.get(

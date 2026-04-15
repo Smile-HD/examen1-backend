@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.models.incident_schemas import WorkshopIncidentHistoryResponse
 from app.models.workshop_schemas import (
+    WorkshopProfileResponse,
+    WorkshopProfileUpdateRequest,
     WorkshopTechnicianAssignRequest,
     WorkshopTechnicianAssignResponse,
     WorkshopTechnicianCandidateResponse,
@@ -18,20 +20,24 @@ from app.models.workshop_schemas import (
     WorkshopVehicleUpdateRequest,
 )
 from app.services.workshop_service import (
+    InvalidWorkshopServiceSelectionError,
     TechnicianAlreadyAssignedError,
     TechnicianEmailMismatchError,
     TechnicianNotAssignedToWorkshopError,
     TechnicianNotFoundError,
+    WorkshopProfileNotFoundError,
     WorkshopVehicleAlreadyExistsError,
     WorkshopVehicleNotFoundError,
     assign_technician_to_workshop,
     create_workshop_vehicle,
     delete_workshop_vehicle,
+    get_workshop_profile,
     list_workshop_technician_locations,
     list_workshop_technicians,
     list_workshop_vehicles,
     search_technicians,
     unassign_technician_from_workshop,
+    update_workshop_profile,
     update_workshop_vehicle,
 )
 from app.services.incident_service import list_workshop_incident_history
@@ -167,3 +173,30 @@ def list_workshop_technician_locations_controller(
 ) -> list[WorkshopTechnicianLocationItem]:
     # Devuelve ubicaciones reportadas por tecnicos del taller.
     return list_workshop_technician_locations(taller_id=taller_id, db=db)
+
+
+def get_workshop_profile_controller(
+    *,
+    taller_id: int,
+    db: Session,
+) -> WorkshopProfileResponse:
+    # Devuelve el perfil editable del taller autenticado.
+    try:
+        return get_workshop_profile(taller_id=taller_id, db=db)
+    except WorkshopProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def update_workshop_profile_controller(
+    payload: WorkshopProfileUpdateRequest,
+    *,
+    taller_id: int,
+    db: Session,
+) -> WorkshopProfileResponse:
+    # Actualiza el perfil del taller y sus servicios ofrecidos.
+    try:
+        return update_workshop_profile(payload, taller_id=taller_id, db=db)
+    except WorkshopProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidWorkshopServiceSelectionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

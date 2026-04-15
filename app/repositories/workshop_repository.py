@@ -2,7 +2,7 @@
 
 from sqlalchemy.orm import Session
 
-from app.models.user import Cliente, Tecnico, Transporte, Usuario
+from app.models.user import Cliente, Servicio, Taller, TallerServicio, Tecnico, Transporte, Usuario
 
 
 class WorkshopRepository:
@@ -32,6 +32,68 @@ class WorkshopRepository:
     def get_user_by_id(self, user_id: int) -> Usuario | None:
         # Obtiene datos base del usuario por id.
         return self.db.query(Usuario).filter(Usuario.id == user_id).first()
+
+    def get_workshop_by_id(self, taller_id: int) -> Taller | None:
+        # Obtiene el perfil del taller autenticado.
+        return self.db.query(Taller).filter(Taller.id == taller_id).first()
+
+    def list_services(self) -> list[Servicio]:
+        # Lista catalogo de servicios disponibles para talleres.
+        return self.db.query(Servicio).order_by(Servicio.nombre.asc()).all()
+
+    def get_service_by_name(self, name: str) -> Servicio | None:
+        # Busca servicio por nombre normalizado.
+        return self.db.query(Servicio).filter(Servicio.nombre == name).first()
+
+    def create_service(self, name: str) -> Servicio:
+        # Crea un servicio en el catalogo global.
+        service = Servicio(nombre=name)
+        self.db.add(service)
+        self.db.flush()
+        return service
+
+    def list_workshop_service_ids(self, taller_id: int) -> list[int]:
+        # Lista ids de servicios ofrecidos por el taller.
+        rows = (
+            self.db.query(TallerServicio.servicio_id)
+            .filter(TallerServicio.taller_id == taller_id)
+            .all()
+        )
+        return [int(row[0]) for row in rows]
+
+    def replace_workshop_services(self, taller_id: int, service_ids: list[int]) -> None:
+        # Reemplaza por completo los servicios ofrecidos por el taller.
+        (
+            self.db.query(TallerServicio)
+            .filter(TallerServicio.taller_id == taller_id)
+            .delete(synchronize_session=False)
+        )
+
+        unique_service_ids: list[int] = []
+        seen: set[int] = set()
+        for service_id in service_ids:
+            if service_id in seen:
+                continue
+            seen.add(service_id)
+            unique_service_ids.append(service_id)
+
+        for service_id in unique_service_ids:
+            self.db.add(TallerServicio(taller_id=taller_id, servicio_id=service_id))
+
+        self.db.flush()
+
+    def update_workshop_profile(
+        self,
+        workshop: Taller,
+        *,
+        nombre: str,
+        ubicacion: str | None,
+    ) -> Taller:
+        # Actualiza nombre y ubicacion textual del taller.
+        workshop.nombre = nombre
+        workshop.ubicacion = ubicacion
+        self.db.flush()
+        return workshop
 
     def list_workshop_technicians(self, taller_id: int) -> list[tuple[Tecnico, Usuario]]:
         # Lista tecnicos asignados al taller autenticado.
