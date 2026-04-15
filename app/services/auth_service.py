@@ -25,6 +25,10 @@ def _resolve_effective_roles(
     # Consolida roles por catalogo y por perfiles para robustecer reglas de acceso.
     effective_roles = {role.strip().lower() for role in role_names}
 
+    # Un tecnico solo es efectivo si mantiene perfil tecnico activo.
+    if "tecnico" in effective_roles and not specialization_flags.get("tecnico"):
+        effective_roles.discard("tecnico")
+
     if specialization_flags.get("cliente"):
         effective_roles.add("cliente")
     if specialization_flags.get("taller"):
@@ -35,18 +39,23 @@ def _resolve_effective_roles(
     return effective_roles
 
 
-def _resolve_primary_profile(*, effective_roles: set[str], channel: str) -> str:
+def _resolve_primary_profile(
+    *,
+    effective_roles: set[str],
+    channel: str,
+    specialization_flags: dict[str, bool],
+) -> str:
     # En mobile priorizamos tecnico sobre cliente; en web siempre prioriza taller.
     if channel == "web":
-        if "taller" in effective_roles:
+        if specialization_flags.get("taller") or "taller" in effective_roles:
             return "taller"
         if "tecnico" in effective_roles:
             return "tecnico"
         return "cliente"
 
-    if "tecnico" in effective_roles:
+    if specialization_flags.get("tecnico"):
         return "tecnico"
-    if "cliente" in effective_roles:
+    if specialization_flags.get("cliente") or "cliente" in effective_roles:
         return "cliente"
     if "taller" in effective_roles:
         return "taller"
@@ -71,7 +80,9 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
     )
 
     # Regla de separacion: mobile para cliente/tecnico; web solo para taller.
-    if data.canal == "mobile" and not ({"cliente", "tecnico"} & effective_roles):
+    if data.canal == "mobile" and not (
+        specialization_flags.get("cliente") or specialization_flags.get("tecnico")
+    ):
         raise ChannelAccessDeniedError(
             "Este usuario no tiene acceso al canal mobile."
         )
@@ -83,7 +94,11 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
     # Nota de negocio: un tecnico inicia como cliente y luego puede sumar rol tecnico.
     # Por eso se conservan todos los roles efectivos en la sesion.
     sorted_roles = sorted(effective_roles)
-    profile = _resolve_primary_profile(effective_roles=effective_roles, channel=data.canal)
+    profile = _resolve_primary_profile(
+        effective_roles=effective_roles,
+        channel=data.canal,
+        specialization_flags=specialization_flags,
+    )
 
     token = create_access_token(
         user_id=user.id,

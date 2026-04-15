@@ -146,9 +146,9 @@ def unassign_technician_from_workshop(
     try:
         repository.unassign_technician_from_workshop(technician)
 
-        # Quitar rol tecnico para que no conserve privilegios de tecnico.
-        technician_role = user_repository.get_role_by_name("tecnico")
-        if technician_role:
+        # Quitar cualquier variante del rol tecnico para evitar privilegios residuales.
+        technician_roles = user_repository.get_roles_by_normalized_name("tecnico")
+        for technician_role in technician_roles:
             user_repository.remove_role_from_user(technician.id, technician_role.id)
 
         incident_repository.create_history(

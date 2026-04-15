@@ -1,5 +1,6 @@
 # Repositorio de acceso a datos para el registro de usuarios.
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.user import Cliente, Rol, RolUsuario, Taller, Tecnico, Usuario
@@ -48,6 +49,18 @@ class UserRepository:
     def get_role_by_name(self, role_name: str) -> Rol | None:
         # Recupera un rol por nombre si existe en catalogo.
         return self.db.query(Rol).filter(Rol.nombre == role_name).first()
+
+    def get_roles_by_normalized_name(self, role_name: str) -> list[Rol]:
+        # Recupera roles comparando en minusculas para evitar variantes legacy.
+        normalized = role_name.strip().lower()
+        if not normalized:
+            return []
+
+        return (
+            self.db.query(Rol)
+            .filter(func.lower(Rol.nombre) == normalized)
+            .all()
+        )
 
     def assign_role_to_user(self, user_id: int, role_id: int) -> None:
         # Asocia usuario y rol en tabla puente rol_usuario.

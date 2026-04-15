@@ -208,8 +208,8 @@ class IncidentRepository:
         return response
 
     def list_incoming_requests_for_workshop(self, taller_id: int) -> list[dict[str, object]]:
-        # Lista solo solicitudes nuevas/pendientes para bandeja de notificaciones.
-        incoming_states = ["enviada", "pendiente"]
+        # Lista solicitudes activas para la bandeja de notificaciones y en proceso.
+        incoming_states = ["enviada", "pendiente", "aceptada", "en_camino", "en_proceso"]
         rows = (
             self.db.query(Solicitud, Incidente, Vehiculo)
             .join(Incidente, Incidente.id == Solicitud.incidente_id)
