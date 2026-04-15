@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -130,4 +130,27 @@ class TallerServicio(Base):
         Integer,
         ForeignKey("servicio.id", ondelete="CASCADE"),
         primary_key=True,
+    )
+
+
+class UsuarioPushToken(Base):
+    # Tokens push FCM registrados por usuario para notificaciones mobile.
+
+    __tablename__ = "usuario_push_token"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("usuario.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    token: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    plataforma: Mapped[str] = mapped_column(String(40), nullable=False, default="flutter_mobile")
+    activo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    actualizado_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

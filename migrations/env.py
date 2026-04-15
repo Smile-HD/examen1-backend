@@ -25,7 +25,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.models.base import Base
-from app.models.user import Usuario, Cliente, Taller, Tecnico, Rol, RolUsuario, Transporte, Servicio, TallerServicio
+from app.models.user import Usuario, Cliente, Taller, Tecnico, Rol, RolUsuario, Transporte, Servicio, TallerServicio, UsuarioPushToken
 from app.models.incident import Incidente
 from app.models.vehicle import Vehiculo
 

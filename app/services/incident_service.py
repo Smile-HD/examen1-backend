@@ -40,6 +40,7 @@ from app.models.incident_schemas import (
     WorkshopCandidateItem,
 )
 from app.repositories.incident_repository import IncidentRepository
+from app.services.push_service import send_client_push_best_effort
 from app.services.ai_incident_processor import AIIncidentProcessingResult, process_incident_payload_for_ai
 
 
@@ -945,6 +946,10 @@ def list_client_requests(
     for row in rows:
         solicitud = row["solicitud"]
         incidente = row["incidente"]
+        metric = repository.get_metric_by_incident(incidente.id)
+        metric_payload = None
+        if metric and metric.solicitud_id == solicitud.id:
+            metric_payload = _build_metric_payload(metric)
         location_payload = _get_live_technician_location(
             tecnico_id=solicitud.tecnico_id,
             solicitud_id=solicitud.id,
@@ -966,6 +971,7 @@ def list_client_requests(
                 tecnico_longitud=location_payload["longitud"],
                 tecnico_precision_metros=location_payload["precision_metros"],
                 tecnico_ubicacion_actualizada_en=location_payload["actualizada_en"],
+                metrica=metric_payload,
             )
         )
 
@@ -1203,6 +1209,20 @@ def decide_workshop_request(
         db.rollback()
         raise
 
+    send_client_push_best_effort(
+        cliente_id=incident.cliente_id,
+        titulo="Tu solicitud fue aceptada",
+        cuerpo="Un taller aceptó tu solicitud y ya asignó técnico para atenderte.",
+        data={
+            "evento": "solicitud_aceptada",
+            "solicitud_id": str(request.id),
+            "incidente_id": str(incident.id),
+            "estado_solicitud": str(request.estado),
+            "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+        },
+        db=db,
+    )
+
     return WorkshopRequestDecisionResponse(
         solicitud_id=request.id,
         incidente_id=incident.id,
@@ -1374,6 +1394,20 @@ def finalize_workshop_service(
         db.rollback()
         raise
 
+    send_client_push_best_effort(
+        cliente_id=incident.cliente_id,
+        titulo="Servicio finalizado",
+        cuerpo="Tu asistencia fue finalizada. Ya puedes revisar las métricas del servicio.",
+        data={
+            "evento": "servicio_finalizado",
+            "solicitud_id": str(request.id),
+            "incidente_id": str(incident.id),
+            "estado_solicitud": str(request.estado),
+            "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+        },
+        db=db,
+    )
+
     return WorkshopServiceCompletionResponse(
         solicitud_id=request.id,
         incidente_id=incident.id,
@@ -1502,6 +1536,20 @@ def reject_service_by_technician(
     except Exception:
         db.rollback()
         raise
+
+    send_client_push_best_effort(
+        cliente_id=incident.cliente_id,
+        titulo="Solicitud rechazada por técnico",
+        cuerpo="El técnico rechazó tu solicitud. Te notificaremos cuando se reasigne una nueva atención.",
+        data={
+            "evento": "solicitud_rechazada_tecnico",
+            "solicitud_id": str(request.id),
+            "incidente_id": str(incident.id),
+            "estado_solicitud": str(request.estado),
+            "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+        },
+        db=db,
+    )
 
     return TechnicianRequestRejectResponse(
         solicitud_id=request.id,

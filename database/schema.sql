@@ -24,6 +24,17 @@ CREATE TABLE rol_usuario (
     FOREIGN KEY (rol_id) REFERENCES rol(id) ON DELETE RESTRICT
 );
 
+CREATE TABLE usuario_push_token (
+    id SERIAL PRIMARY KEY,
+    usuario_id INT NOT NULL,
+    token VARCHAR(1024) NOT NULL UNIQUE,
+    plataforma VARCHAR(40) NOT NULL DEFAULT 'flutter_mobile',
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (usuario_id) REFERENCES usuario(id) ON DELETE CASCADE
+);
+
 -- Un cliente, taller o tecnico es un usuario especializado
 CREATE TABLE cliente (
     id INT PRIMARY KEY,

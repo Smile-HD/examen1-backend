@@ -181,6 +181,7 @@ class ClientRequestItem(BaseModel):
     tecnico_longitud: float | None = None
     tecnico_precision_metros: float | None = None
     tecnico_ubicacion_actualizada_en: datetime | None = None
+    metrica: dict[str, float | int | str | None] | None = None
 
 
 class ClientRequestsResponse(BaseModel):
