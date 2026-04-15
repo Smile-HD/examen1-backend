@@ -2,6 +2,7 @@
 
 import re
 
+import httpx
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -88,8 +89,15 @@ def _ensure_workshop_service_catalog(repository: WorkshopRepository) -> list:
     # Asegura un catalogo base minimo para que el taller pueda marcar servicios.
     for raw_name in _DEFAULT_WORKSHOP_SERVICES:
         name = raw_name.strip().lower()
-        if not repository.get_service_by_name(name):
-            repository.create_service(name)
+        if repository.get_service_by_normalized_name(name):
+            continue
+
+        # Evita que una carrera de concurrencia rompa el guardado del perfil.
+        try:
+            with repository.db.begin_nested():
+                repository.create_service(name)
+        except IntegrityError:
+            pass
     return repository.list_services()
 
 
@@ -104,10 +112,36 @@ def _compose_workshop_location_text(
     if latitud is None or longitud is None:
         return text or None
 
-    coords_text = f"(lat: {latitud:.6f}, lng: {longitud:.6f})"
     if text:
-        return f"{text} {coords_text}"
-    return coords_text
+        return text
+
+    return f"lat: {latitud:.6f}, lng: {longitud:.6f}"
+
+
+def _reverse_geocode_location_text(*, latitud: float, longitud: float) -> str | None:
+    # Traduce coordenadas a una direccion humana usando Nominatim.
+    try:
+        response = httpx.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "lat": f"{latitud:.6f}",
+                "lon": f"{longitud:.6f}",
+                "format": "jsonv2",
+                "zoom": 18,
+                "addressdetails": 1,
+            },
+            headers={"User-Agent": "Moondancer/1.0 (workshop-profile)"},
+            timeout=4.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        display_name = payload.get("display_name")
+        if isinstance(display_name, str):
+            text = display_name.strip()
+            return text or None
+    except Exception:
+        return None
+    return None
 
 
 def _parse_workshop_location_text(raw_location: str | None) -> tuple[str | None, float | None, float | None]:
@@ -156,11 +190,12 @@ def get_workshop_profile(
     if not workshop:
         raise WorkshopProfileNotFoundError("Perfil de taller no encontrado para el usuario autenticado.")
 
-    services = _ensure_workshop_service_catalog(repository)
+    services = repository.list_services()
     offered_ids = repository.list_workshop_service_ids(taller_id)
-    location_text, latitud, longitud = _parse_workshop_location_text(workshop.ubicacion)
+    location_text, parsed_latitud, parsed_longitud = _parse_workshop_location_text(workshop.ubicacion)
 
-    db.commit()
+    latitud = float(workshop.latitud) if workshop.latitud is not None else parsed_latitud
+    longitud = float(workshop.longitud) if workshop.longitud is not None else parsed_longitud
 
     return WorkshopProfileResponse(
         taller_id=workshop.id,
@@ -193,29 +228,44 @@ def update_workshop_profile(
     services = _ensure_workshop_service_catalog(repository)
     available_ids = {int(item.id) for item in services}
 
-    requested_ids = [int(service_id) for service_id in payload.servicios_ofrecidos_ids]
-    if any(service_id not in available_ids for service_id in requested_ids):
-        raise InvalidWorkshopServiceSelectionError(
-            "Uno o más servicios seleccionados no existen en el catálogo."
-        )
+    requested_ids = [
+        int(service_id)
+        for service_id in payload.servicios_ofrecidos_ids
+        if int(service_id) in available_ids
+    ]
 
     previous_name = workshop.nombre
     previous_location = workshop.ubicacion
 
-    try:
-        new_location = _compose_workshop_location_text(
-            ubicacion_texto=payload.ubicacion_texto,
-            latitud=payload.latitud,
-            longitud=payload.longitud,
-        )
+    latitud = float(payload.latitud) if payload.latitud is not None else None
+    longitud = float(payload.longitud) if payload.longitud is not None else None
 
+    location_text_input = (payload.ubicacion_texto or "").strip() or None
+    if location_text_input is None and latitud is not None and longitud is not None:
+        location_text_input = _reverse_geocode_location_text(latitud=latitud, longitud=longitud)
+
+    new_location = _compose_workshop_location_text(
+        ubicacion_texto=location_text_input,
+        latitud=latitud,
+        longitud=longitud,
+    )
+
+    try:
         repository.update_workshop_profile(
             workshop,
             nombre=payload.nombre_taller,
             ubicacion=new_location,
+            latitud=latitud,
+            longitud=longitud,
         )
         repository.replace_workshop_services(taller_id, requested_ids)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
+    # No bloquea el guardado si el historial falla por datos legacy.
+    try:
         incident_repository.create_history(
             incidente_id=None,
             taller_id=taller_id,
@@ -228,11 +278,9 @@ def update_workshop_profile(
             ),
             actor_usuario_id=taller_id,
         )
-
         db.commit()
     except Exception:
         db.rollback()
-        raise
 
     return get_workshop_profile(taller_id=taller_id, db=db)
 

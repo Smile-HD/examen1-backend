@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -68,6 +68,8 @@ class Taller(Base):
     )
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
     ubicacion: Mapped[str] = mapped_column(Text, nullable=True)
+    latitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)
+    longitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)
     estado: Mapped[str] = mapped_column(String(20), nullable=False, default="activo")
 
 

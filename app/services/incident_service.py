@@ -344,13 +344,9 @@ def _get_live_technician_location(*, tecnico_id: int | None, solicitud_id: int |
             "actualizada_en": None,
         }
 
-    if solicitud_id is not None and entry.solicitud_id not in {None, solicitud_id}:
-        return {
-            "latitud": None,
-            "longitud": None,
-            "precision_metros": None,
-            "actualizada_en": None,
-        }
+    # Mostramos la última ubicación conocida del técnico aunque la solicitud
+    # enviada por el cliente móvil no venga sincronizada con el id actual.
+    _ = solicitud_id
 
     return {
         "latitud": float(entry.latitud),

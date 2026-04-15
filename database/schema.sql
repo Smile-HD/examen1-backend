@@ -34,6 +34,8 @@ CREATE TABLE taller (
     id INT PRIMARY KEY,
     nombre VARCHAR(150) NOT NULL,
     ubicacion TEXT,
+    latitud NUMERIC(9,6),
+    longitud NUMERIC(9,6),
     estado VARCHAR(20) NOT NULL DEFAULT 'activo',
     FOREIGN KEY (id) REFERENCES usuario(id) ON DELETE CASCADE
 );

@@ -1,5 +1,6 @@
 # Repositorio para gestion operativa de talleres.
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.user import Cliente, Servicio, Taller, TallerServicio, Tecnico, Transporte, Usuario
@@ -45,6 +46,15 @@ class WorkshopRepository:
         # Busca servicio por nombre normalizado.
         return self.db.query(Servicio).filter(Servicio.nombre == name).first()
 
+    def get_service_by_normalized_name(self, name: str) -> Servicio | None:
+        # Busca servicio ignorando mayusculas/minusculas para evitar duplicados semanticos.
+        normalized = name.strip().lower()
+        return (
+            self.db.query(Servicio)
+            .filter(func.lower(Servicio.nombre) == normalized)
+            .first()
+        )
+
     def create_service(self, name: str) -> Servicio:
         # Crea un servicio en el catalogo global.
         service = Servicio(nombre=name)
@@ -88,10 +98,14 @@ class WorkshopRepository:
         *,
         nombre: str,
         ubicacion: str | None,
+        latitud: float | None,
+        longitud: float | None,
     ) -> Taller:
         # Actualiza nombre y ubicacion textual del taller.
         workshop.nombre = nombre
         workshop.ubicacion = ubicacion
+        workshop.latitud = latitud
+        workshop.longitud = longitud
         self.db.flush()
         return workshop
 
