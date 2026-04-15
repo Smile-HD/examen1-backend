@@ -176,6 +176,11 @@ class ClientRequestItem(BaseModel):
     tipo_problema: str
     prioridad: int
     fecha_asignacion: datetime
+    tecnico_id: int | None = None
+    tecnico_latitud: float | None = None
+    tecnico_longitud: float | None = None
+    tecnico_precision_metros: float | None = None
+    tecnico_ubicacion_actualizada_en: datetime | None = None
 
 
 class ClientRequestsResponse(BaseModel):
@@ -213,6 +218,11 @@ class WorkshopIncomingRequestItem(BaseModel):
     cliente_id: int
     fecha_asignacion: datetime
     evidencias: list[WorkshopEvidenceItem]
+    tecnico_id: int | None = None
+    tecnico_latitud: float | None = None
+    tecnico_longitud: float | None = None
+    tecnico_precision_metros: float | None = None
+    tecnico_ubicacion_actualizada_en: datetime | None = None
 
 
 class WorkshopIncomingRequestsResponse(BaseModel):
@@ -281,6 +291,10 @@ class IncidentDetailResponse(BaseModel):
     solicitud_aceptada_id: int | None
     tecnico_asignado_id: int | None
     transporte_asignado_id: int | None
+    tecnico_latitud: float | None
+    tecnico_longitud: float | None
+    tecnico_precision_metros: float | None
+    tecnico_ubicacion_actualizada_en: datetime | None
     vehiculo_placa: str
     vehiculo_marca: str | None
     vehiculo_modelo: str | None
@@ -350,6 +364,58 @@ class TechnicianLocationUpdateResponse(BaseModel):
     latitud: float
     longitud: float
     precision_metros: float | None
+    mensaje: str
+
+
+class TechnicianIncomingRequestItem(BaseModel):
+    # Solicitud activa visible para el tecnico asignado.
+
+    solicitud_id: int
+    incidente_id: int
+    estado_solicitud: str
+    estado_incidente: str
+    tipo_problema: str
+    prioridad: int
+    vehiculo_placa: str
+    vehiculo_marca: str | None
+    vehiculo_modelo: str | None
+    vehiculo_anio: int | None
+    ubicacion: str | None
+    latitud: float | None
+    longitud: float | None
+    fecha_asignacion: datetime
+
+
+class TechnicianIncomingRequestsResponse(BaseModel):
+    # Bandeja de solicitudes activas para tecnico mobile.
+
+    total: int
+    solicitudes: list[TechnicianIncomingRequestItem]
+
+
+class TechnicianRequestRejectRequest(BaseModel):
+    # Payload para que el tecnico rechace y libere la solicitud asignada.
+
+    comentario: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("comentario")
+    @classmethod
+    def normalize_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+
+
+class TechnicianRequestRejectResponse(BaseModel):
+    # Resultado del rechazo de solicitud por parte del tecnico.
+
+    solicitud_id: int
+    incidente_id: int
+    estado_solicitud: str
+    estado_incidente: str
+    tecnico_liberado_id: int | None
+    transporte_liberado_id: int | None
     mensaje: str
 
 

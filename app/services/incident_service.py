@@ -2,6 +2,7 @@
 
 import math
 import re
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -32,6 +33,10 @@ from app.models.incident_schemas import (
     WorkshopRequestDecisionResponse,
     TechnicianLocationUpdateRequest,
     TechnicianLocationUpdateResponse,
+    TechnicianIncomingRequestItem,
+    TechnicianIncomingRequestsResponse,
+    TechnicianRequestRejectRequest,
+    TechnicianRequestRejectResponse,
     WorkshopCandidateItem,
 )
 from app.repositories.incident_repository import IncidentRepository
@@ -266,6 +271,10 @@ def _build_incident_detail_response(
     history = repository.list_incident_history(incident.id)
     assigned_request = repository.get_primary_assigned_request_for_incident(incident.id)
     metric = repository.get_metric_by_incident(incident.id)
+    location_payload = _get_live_technician_location(
+        tecnico_id=assigned_request.tecnico_id if assigned_request else None,
+        solicitud_id=assigned_request.id if assigned_request else None,
+    )
 
     return IncidentDetailResponse(
         incidente_id=incident.id,
@@ -278,6 +287,10 @@ def _build_incident_detail_response(
         solicitud_aceptada_id=assigned_request.id if assigned_request else None,
         tecnico_asignado_id=assigned_request.tecnico_id if assigned_request else None,
         transporte_asignado_id=assigned_request.transporte_id if assigned_request else None,
+        tecnico_latitud=location_payload["latitud"],
+        tecnico_longitud=location_payload["longitud"],
+        tecnico_precision_metros=location_payload["precision_metros"],
+        tecnico_ubicacion_actualizada_en=location_payload["actualizada_en"],
         vehiculo_placa=incident.vehiculo_placa,
         vehiculo_marca=vehicle.marca if vehicle else None,
         vehiculo_modelo=vehicle.modelo if vehicle else None,
@@ -308,6 +321,43 @@ def _build_incident_detail_response(
             for entry in history
         ],
     )
+
+
+def _get_live_technician_location(*, tecnico_id: int | None, solicitud_id: int | None) -> dict[str, object]:
+    # Recupera ubicacion reciente del tecnico desde cache en memoria.
+    if tecnico_id is None:
+        return {
+            "latitud": None,
+            "longitud": None,
+            "precision_metros": None,
+            "actualizada_en": None,
+        }
+
+    from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
+
+    entry = ACTIVE_TECHNICIAN_LOCATIONS.get(tecnico_id)
+    if not entry:
+        return {
+            "latitud": None,
+            "longitud": None,
+            "precision_metros": None,
+            "actualizada_en": None,
+        }
+
+    if solicitud_id is not None and entry.solicitud_id not in {None, solicitud_id}:
+        return {
+            "latitud": None,
+            "longitud": None,
+            "precision_metros": None,
+            "actualizada_en": None,
+        }
+
+    return {
+        "latitud": float(entry.latitud),
+        "longitud": float(entry.longitud),
+        "precision_metros": float(entry.precision_metros) if entry.precision_metros is not None else None,
+        "actualizada_en": entry.actualizada_en,
+    }
 
 
 def _parse_location_coordinates(raw_location: str | None) -> tuple[float, float] | None:
@@ -882,6 +932,10 @@ def list_client_requests(
     for row in rows:
         solicitud = row["solicitud"]
         incidente = row["incidente"]
+        location_payload = _get_live_technician_location(
+            tecnico_id=solicitud.tecnico_id,
+            solicitud_id=solicitud.id,
+        )
         items.append(
             ClientRequestItem(
                 solicitud_id=solicitud.id,
@@ -893,6 +947,11 @@ def list_client_requests(
                 tipo_problema=incidente.tipo_problema,
                 prioridad=incidente.prioridad,
                 fecha_asignacion=solicitud.fecha_asignacion,
+                tecnico_id=solicitud.tecnico_id,
+                tecnico_latitud=location_payload["latitud"],
+                tecnico_longitud=location_payload["longitud"],
+                tecnico_precision_metros=location_payload["precision_metros"],
+                tecnico_ubicacion_actualizada_en=location_payload["actualizada_en"],
             )
         )
 
@@ -914,6 +973,10 @@ def list_workshop_incoming_requests(
         incidente = row["incidente"]
         vehiculo = row["vehiculo"]
         evidencias = repository.list_incident_evidence(incidente.id)
+        location_payload = _get_live_technician_location(
+            tecnico_id=solicitud.tecnico_id,
+            solicitud_id=solicitud.id,
+        )
 
         items.append(
             WorkshopIncomingRequestItem(
@@ -941,6 +1004,11 @@ def list_workshop_incoming_requests(
                     )
                     for evidence in evidencias
                 ],
+                tecnico_id=solicitud.tecnico_id,
+                tecnico_latitud=location_payload["latitud"],
+                tecnico_longitud=location_payload["longitud"],
+                tecnico_precision_metros=location_payload["precision_metros"],
+                tecnico_ubicacion_actualizada_en=location_payload["actualizada_en"],
             )
         )
 
@@ -1334,6 +1402,103 @@ def finalize_service_by_technician(
     )
 
 
+def reject_service_by_technician(
+    solicitud_id: int,
+    data: TechnicianRequestRejectRequest,
+    *,
+    tecnico_id: int,
+    db: Session,
+) -> TechnicianRequestRejectResponse:
+    # Permite al tecnico rechazar una solicitud asignada y liberar recursos.
+    repository = IncidentRepository(db)
+    request = repository.get_request_for_technician(solicitud_id, tecnico_id)
+    if not request:
+        raise TechnicianAccessDeniedError(
+            "La solicitud no pertenece al tecnico autenticado."
+        )
+
+    incident = repository.get_incident_by_id(request.incidente_id)
+    if not incident:
+        raise IncidentNotFoundError("Incidente asociado no encontrado.")
+
+    if request.estado not in {"aceptada", "en_camino", "en_proceso"}:
+        raise InvalidIncidentFinalizationError(
+            "Solo puedes rechazar una solicitud activa asignada."
+        )
+
+    technician_id = request.tecnico_id
+    transport_id = request.transporte_id
+
+    try:
+        if technician_id:
+            technician = repository.get_technician_by_id(technician_id)
+            if technician:
+                repository.update_technician_state(technician, "disponible")
+
+        if transport_id:
+            transport = repository.get_transport_by_id(transport_id)
+            if transport:
+                repository.update_transport_state(transport, "disponible")
+
+        repository.update_request(
+            request,
+            estado="rechazada_tecnico",
+            comentario=data.comentario,
+            tecnico_id=None,
+            transporte_id=None,
+        )
+
+        pending_state = repository.get_or_create_service_state(
+            name="pendiente",
+            description="Incidente reportado pendiente de evaluacion.",
+        )
+        repository.update_incident(
+            incident,
+            estado_servicio_id=pending_state.id,
+            taller_id=None,
+        )
+
+        repository.create_history(
+            incidente_id=incident.id,
+            taller_id=request.taller_id,
+            cliente_id=incident.cliente_id,
+            accion="solicitud_rechazada_tecnico",
+            descripcion=(
+                f"Tecnico {tecnico_id} rechazo solicitud {request.id}. "
+                f"Recursos liberados: transporte={transport_id}."
+            ),
+            actor_usuario_id=tecnico_id,
+        )
+
+        from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
+
+        if technician_id in ACTIVE_TECHNICIAN_LOCATIONS:
+            current = ACTIVE_TECHNICIAN_LOCATIONS[technician_id]
+            ACTIVE_TECHNICIAN_LOCATIONS[technician_id] = current.model_copy(
+                update={
+                    "solicitud_id": None,
+                    "actualizada_en": datetime.now(),
+                }
+            )
+
+        db.commit()
+        db.refresh(request)
+        db.refresh(incident)
+    except Exception:
+        db.rollback()
+        raise
+
+    return TechnicianRequestRejectResponse(
+        solicitud_id=request.id,
+        incidente_id=incident.id,
+        estado_solicitud=request.estado,
+        estado_incidente=repository.get_service_state_name(incident.estado_servicio_id),
+        tecnico_liberado_id=technician_id,
+        transporte_liberado_id=transport_id,
+        mensaje="Solicitud rechazada por el técnico y recursos liberados.",
+    )
+
+
 def update_technician_location(
     data: TechnicianLocationUpdateRequest,
     *,
@@ -1351,7 +1516,6 @@ def update_technician_location(
             )
 
     from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS, TechnicianLocationInMemory
-    from datetime import datetime
 
     ACTIVE_TECHNICIAN_LOCATIONS[tecnico_id] = TechnicianLocationInMemory(
         tecnico_id=tecnico_id,
@@ -1370,6 +1534,44 @@ def update_technician_location(
         precision_metros=data.precision_metros,
         mensaje="Ubicacion actualizada en la memoria del taller.",
     )
+
+
+def list_technician_incoming_requests(
+    *,
+    tecnico_id: int,
+    db: Session,
+) -> TechnicianIncomingRequestsResponse:
+    # Devuelve solicitudes activas asignadas al tecnico autenticado.
+    repository = IncidentRepository(db)
+    requests = repository.list_active_requests_for_technician(tecnico_id)
+
+    items: list[TechnicianIncomingRequestItem] = []
+    for request in requests:
+        incident = repository.get_incident_by_id(request.incidente_id)
+        if not incident:
+            continue
+
+        vehicle = repository.get_vehicle_by_plate(incident.vehiculo_placa)
+        items.append(
+            TechnicianIncomingRequestItem(
+                solicitud_id=request.id,
+                incidente_id=incident.id,
+                estado_solicitud=request.estado,
+                estado_incidente=repository.get_service_state_name(incident.estado_servicio_id),
+                tipo_problema=incident.tipo_problema,
+                prioridad=incident.prioridad,
+                vehiculo_placa=incident.vehiculo_placa,
+                vehiculo_marca=vehicle.marca if vehicle else None,
+                vehiculo_modelo=vehicle.modelo if vehicle else None,
+                vehiculo_anio=vehicle.anio if vehicle else None,
+                ubicacion=incident.ubicacion,
+                latitud=incident.latitud,
+                longitud=incident.longitud,
+                fecha_asignacion=request.fecha_asignacion,
+            )
+        )
+
+    return TechnicianIncomingRequestsResponse(total=len(items), solicitudes=items)
 
 
 def cancel_client_incident(

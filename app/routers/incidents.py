@@ -16,6 +16,7 @@ from app.controllers.incident_controller import (
     get_incident_detail_for_workshop_controller,
     list_client_incident_history_controller,
     list_client_requests_controller,
+    list_technician_incoming_requests_controller,
     list_technician_incident_history_controller,
     list_workshop_candidates_controller,
     list_workshop_incident_history_controller,
@@ -23,6 +24,7 @@ from app.controllers.incident_controller import (
     report_incident_controller,
     resubmit_incident_evidence_controller,
     select_workshops_for_incident_controller,
+    reject_technician_service_controller,
     update_technician_location_controller,
 )
 from app.database import get_db
@@ -43,6 +45,9 @@ from app.models.incident_schemas import (
     ClientRequestsResponse,
     WorkshopIncidentHistoryResponse,
     TechnicianIncidentHistoryResponse,
+    TechnicianIncomingRequestsResponse,
+    TechnicianRequestRejectRequest,
+    TechnicianRequestRejectResponse,
     IncidentCancelResponse,
     IncidentDetailResponse,
     IncidentCandidateSelectionRequest,
@@ -295,6 +300,22 @@ def list_technician_incident_history_endpoint(
     )
 
 
+@router.get(
+    "/tecnico/solicitudes",
+    response_model=TechnicianIncomingRequestsResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_technician_incoming_requests_endpoint(
+    current_user: AuthenticatedUser = Depends(require_mobile_tecnico),
+    db: Session = Depends(get_db),
+) -> TechnicianIncomingRequestsResponse:
+    # Bandeja de solicitudes activas para tecnico autenticado.
+    return list_technician_incoming_requests_controller(
+        tecnico_id=current_user.user_id,
+        db=db,
+    )
+
+
 @router.post(
     "/{incidente_id}/cancelar",
     response_model=IncidentCancelResponse,
@@ -418,6 +439,26 @@ def finalize_technician_service_endpoint(
 ) -> WorkshopServiceCompletionResponse:
     # Finaliza servicio desde tecnico mobile y registra metricas.
     return finalize_technician_service_controller(
+        solicitud_id,
+        payload,
+        tecnico_id=current_user.user_id,
+        db=db,
+    )
+
+
+@router.post(
+    "/tecnico/solicitudes/{solicitud_id}/rechazar",
+    response_model=TechnicianRequestRejectResponse,
+    status_code=status.HTTP_200_OK,
+)
+def reject_technician_service_endpoint(
+    solicitud_id: int,
+    payload: TechnicianRequestRejectRequest,
+    current_user: AuthenticatedUser = Depends(require_mobile_tecnico),
+    db: Session = Depends(get_db),
+) -> TechnicianRequestRejectResponse:
+    # Permite al tecnico rechazar solicitud activa y liberar recursos.
+    return reject_technician_service_controller(
         solicitud_id,
         payload,
         tecnico_id=current_user.user_id,

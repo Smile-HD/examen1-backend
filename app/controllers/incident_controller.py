@@ -8,6 +8,9 @@ from app.models.incident_schemas import (
     ClientRequestsResponse,
     WorkshopIncidentHistoryResponse,
     TechnicianIncidentHistoryResponse,
+    TechnicianIncomingRequestsResponse,
+    TechnicianRequestRejectRequest,
+    TechnicianRequestRejectResponse,
     IncidentDetailResponse,
     IncidentCancelResponse,
     IncidentCandidateSelectionRequest,
@@ -42,6 +45,7 @@ from app.services.incident_service import (
     decide_workshop_request,
     cancel_client_incident,
     finalize_service_by_technician,
+    reject_service_by_technician,
     finalize_workshop_service,
     get_incident_detail_for_client,
     get_incident_detail_for_workshop,
@@ -50,6 +54,7 @@ from app.services.incident_service import (
     list_workshop_incident_history,
     list_technician_incident_history,
     list_workshop_candidates,
+    list_technician_incoming_requests,
     list_workshop_incoming_requests,
     report_incident,
     resubmit_incident_evidence,
@@ -168,6 +173,15 @@ def list_technician_incident_history_controller(
     return list_technician_incident_history(tecnico_id=tecnico_id, db=db)
 
 
+def list_technician_incoming_requests_controller(
+    *,
+    tecnico_id: int,
+    db: Session,
+) -> TechnicianIncomingRequestsResponse:
+    # Devuelve bandeja activa del tecnico autenticado.
+    return list_technician_incoming_requests(tecnico_id=tecnico_id, db=db)
+
+
 def cancel_client_incident_controller(
     incidente_id: int,
     *,
@@ -284,6 +298,31 @@ def finalize_technician_service_controller(
     # Cierra servicio desde canal mobile del tecnico asignado.
     try:
         return finalize_service_by_technician(
+            solicitud_id,
+            payload,
+            tecnico_id=tecnico_id,
+            db=db,
+        )
+    except TechnicianAccessDeniedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkshopRequestNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except IncidentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidIncidentFinalizationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+def reject_technician_service_controller(
+    solicitud_id: int,
+    payload: TechnicianRequestRejectRequest,
+    *,
+    tecnico_id: int,
+    db: Session,
+) -> TechnicianRequestRejectResponse:
+    # Permite al tecnico rechazar solicitud activa y liberar recursos.
+    try:
+        return reject_service_by_technician(
             solicitud_id,
             payload,
             tecnico_id=tecnico_id,

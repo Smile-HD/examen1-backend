@@ -312,6 +312,19 @@ class IncidentRepository:
             .all()
         )
 
+    def list_active_requests_for_technician(self, tecnico_id: int) -> list[Solicitud]:
+        # Recupera solicitudes activas asignadas al tecnico autenticado.
+        active_states = ["aceptada", "en_camino", "en_proceso"]
+        return (
+            self.db.query(Solicitud)
+            .filter(
+                Solicitud.tecnico_id == tecnico_id,
+                Solicitud.estado.in_(active_states),
+            )
+            .order_by(Solicitud.fecha_asignacion.desc())
+            .all()
+        )
+
     def list_requests_for_workshop(self, taller_id: int) -> list[Solicitud]:
         # Recupera todas las solicitudes de un taller para metricas operativas.
         return (
