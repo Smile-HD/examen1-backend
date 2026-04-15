@@ -274,6 +274,7 @@ def _build_incident_detail_response(
     location_payload = _get_live_technician_location(
         tecnico_id=assigned_request.tecnico_id if assigned_request else None,
         solicitud_id=assigned_request.id if assigned_request else None,
+        repository=repository,
     )
 
     return IncidentDetailResponse(
@@ -323,8 +324,13 @@ def _build_incident_detail_response(
     )
 
 
-def _get_live_technician_location(*, tecnico_id: int | None, solicitud_id: int | None) -> dict[str, object]:
-    # Recupera ubicacion reciente del tecnico desde cache en memoria.
+def _get_live_technician_location(
+    *,
+    tecnico_id: int | None,
+    solicitud_id: int | None,
+    repository: IncidentRepository | None = None,
+) -> dict[str, object]:
+    # Recupera ubicacion reciente del tecnico desde cache y fallback persistido en DB.
     if tecnico_id is None:
         return {
             "latitud": None,
@@ -335,7 +341,18 @@ def _get_live_technician_location(*, tecnico_id: int | None, solicitud_id: int |
 
     from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
 
-    entry = ACTIVE_TECHNICIAN_LOCATIONS.get(tecnico_id)
+    memory_entry = ACTIVE_TECHNICIAN_LOCATIONS.get(tecnico_id)
+    db_entry = repository.get_technician_location(tecnico_id) if repository else None
+
+    entry = None
+    if memory_entry and db_entry:
+        memory_ts = memory_entry.actualizada_en.timestamp() if memory_entry.actualizada_en else 0.0
+        db_ts = db_entry.actualizada_en.timestamp() if db_entry.actualizada_en else 0.0
+        entry = memory_entry if memory_ts >= db_ts else db_entry
+    elif memory_entry:
+        entry = memory_entry
+    elif db_entry:
+        entry = db_entry
     if not entry:
         return {
             "latitud": None,
@@ -931,6 +948,7 @@ def list_client_requests(
         location_payload = _get_live_technician_location(
             tecnico_id=solicitud.tecnico_id,
             solicitud_id=solicitud.id,
+            repository=repository,
         )
         items.append(
             ClientRequestItem(
@@ -972,6 +990,7 @@ def list_workshop_incoming_requests(
         location_payload = _get_live_technician_location(
             tecnico_id=solicitud.tecnico_id,
             solicitud_id=solicitud.id,
+            repository=repository,
         )
 
         items.append(
@@ -1501,7 +1520,7 @@ def update_technician_location(
     tecnico_id: int,
     db: Session,
 ) -> TechnicianLocationUpdateResponse:
-    # Guarda ultima ubicacion reportada en memoria, sin hacer persistencia.
+    # Guarda ultima ubicacion reportada en memoria y en base de datos.
     repository = IncidentRepository(db)
 
     if data.solicitud_id:
@@ -1513,14 +1532,29 @@ def update_technician_location(
 
     from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS, TechnicianLocationInMemory
 
+    now = datetime.now()
+
     ACTIVE_TECHNICIAN_LOCATIONS[tecnico_id] = TechnicianLocationInMemory(
         tecnico_id=tecnico_id,
         solicitud_id=data.solicitud_id,
         latitud=data.latitud,
         longitud=data.longitud,
         precision_metros=data.precision_metros,
-        actualizada_en=datetime.now()
+        actualizada_en=now,
     )
+
+    try:
+        repository.upsert_technician_location(
+            tecnico_id=tecnico_id,
+            latitud=data.latitud,
+            longitud=data.longitud,
+            solicitud_id=data.solicitud_id,
+            precision_metros=data.precision_metros,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return TechnicianLocationUpdateResponse(
         tecnico_id=tecnico_id,
@@ -1528,7 +1562,7 @@ def update_technician_location(
         latitud=data.latitud,
         longitud=data.longitud,
         precision_metros=data.precision_metros,
-        mensaje="Ubicacion actualizada en la memoria del taller.",
+        mensaje="Ubicacion actualizada correctamente.",
     )
 
 

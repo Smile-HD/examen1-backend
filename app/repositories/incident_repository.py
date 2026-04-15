@@ -474,6 +474,14 @@ class IncidentRepository:
         self.db.flush()
         return location
 
+    def get_technician_location(self, tecnico_id: int) -> TecnicoUbicacion | None:
+        # Recupera la ultima ubicacion persistida del tecnico.
+        return (
+            self.db.query(TecnicoUbicacion)
+            .filter(TecnicoUbicacion.tecnico_id == tecnico_id)
+            .first()
+        )
+
     def list_workshop_technician_locations(self, taller_id: int) -> list[dict[str, object]]:
         # Devuelve ubicacion reportada de tecnicos del taller autenticado.
         rows = (
