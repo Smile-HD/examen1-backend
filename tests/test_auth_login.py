@@ -71,6 +71,19 @@ def _register_taller(client: TestClient, email: str = "taller@example.com") -> N
     assert response.status_code == 201
 
 
+def _register_tecnico(client: TestClient, email: str = "tecnico@example.com") -> None:
+    # Registra tecnico desde mobile para validar doble rol cliente+tecnico.
+    payload = {
+        "nombre": "Tecnico Uno",
+        "correo": email,
+        "password": "Clave1234",
+        "telefono": "72222222",
+        "tipo_usuario": "tecnico",
+    }
+    response = client.post("/api/v1/usuarios/registro", json=payload)
+    assert response.status_code == 201
+
+
 def test_login_cliente_mobile_success(client_and_sessionmaker: tuple[TestClient, sessionmaker]) -> None:
     # Cliente puede iniciar sesion en mobile (canal por defecto).
     client, _ = client_and_sessionmaker
@@ -139,10 +152,10 @@ def test_login_cliente_web_forbidden(client_and_sessionmaker: tuple[TestClient, 
     assert response.status_code == 403
 
 
-def test_login_tecnico_promovido_desde_cliente_can_access_web(
+def test_login_tecnico_promovido_desde_cliente_can_access_mobile(
     client_and_sessionmaker: tuple[TestClient, sessionmaker],
 ) -> None:
-    # Un tecnico puede arrancar como cliente y luego ganar acceso web al ser promovido.
+    # Un tecnico puede arrancar como cliente y luego operar por canal mobile.
     client, SessionLocal = client_and_sessionmaker
     _register_cliente(client, email="tecnico@example.com")
 
@@ -184,7 +197,82 @@ def test_login_tecnico_promovido_desde_cliente_can_access_web(
         data={
             "username": "tecnico@example.com",
             "password": "Clave1234",
+            "canal": "mobile",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "cliente" in data["roles"]
+    assert "tecnico" in data["roles"]
+    assert data["perfil_principal"] == "tecnico"
+
+
+def test_login_tecnico_promovido_desde_cliente_web_forbidden(
+    client_and_sessionmaker: tuple[TestClient, sessionmaker],
+) -> None:
+    # El tecnico no debe usar canal web.
+    client, SessionLocal = client_and_sessionmaker
+    _register_cliente(client, email="tecnico_web@example.com")
+
+    db = SessionLocal()
+    try:
+        user = db.query(Usuario).filter(Usuario.correo == "tecnico_web@example.com").first()
+        assert user is not None
+
+        tecnico_role = db.query(Rol).filter(Rol.nombre == "tecnico").first()
+        if not tecnico_role:
+            tecnico_role = Rol(
+                nombre="tecnico",
+                descripcion="Rol de tecnico para asistencia de talleres.",
+            )
+            db.add(tecnico_role)
+            db.flush()
+
+        rel_exists = (
+            db.query(RolUsuario)
+            .filter(
+                RolUsuario.usuario_id == user.id,
+                RolUsuario.rol_id == tecnico_role.id,
+            )
+            .first()
+        )
+        if not rel_exists:
+            db.add(RolUsuario(usuario_id=user.id, rol_id=tecnico_role.id))
+
+        tecnico_profile = db.query(Tecnico).filter(Tecnico.id == user.id).first()
+        if not tecnico_profile:
+            db.add(Tecnico(id=user.id, estado="disponible"))
+
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/api/v1/auth/login",
+        data={
+            "username": "tecnico_web@example.com",
+            "password": "Clave1234",
             "canal": "web",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_login_tecnico_registrado_mobile_prioriza_tecnico(
+    client_and_sessionmaker: tuple[TestClient, sessionmaker],
+) -> None:
+    # Un registro tecnico debe terminar con roles cliente+tecnico y perfil principal tecnico.
+    client, _ = client_and_sessionmaker
+    _register_tecnico(client, email="tecnico_registrado@example.com")
+
+    response = client.post(
+        "/api/v1/auth/login",
+        data={
+            "username": "tecnico_registrado@example.com",
+            "password": "Clave1234",
+            "canal": "mobile",
         },
     )
 

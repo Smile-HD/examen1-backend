@@ -79,4 +79,53 @@ class Tecnico(Base):
     id: Mapped[int] = mapped_column(
         Integer, ForeignKey("usuario.id", ondelete="CASCADE"), primary_key=True
     )
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     estado: Mapped[str] = mapped_column(String(20), nullable=False, default="disponible")
+
+
+class Transporte(Base):
+    # Unidades de servicio disponibles por taller para asistir incidentes.
+
+    __tablename__ = "transporte"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tipo: Mapped[str] = mapped_column(String(40), nullable=False)
+    placa: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    estado: Mapped[str] = mapped_column(String(20), nullable=False, default="disponible")
+
+
+class Servicio(Base):
+    # Catalogo de servicios mecanicos ofrecidos por talleres.
+
+    __tablename__ = "servicio"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+
+
+class TallerServicio(Base):
+    # Tabla puente entre talleres y servicios para matching de incidentes.
+
+    __tablename__ = "taller_servicio"
+
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    servicio_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("servicio.id", ondelete="CASCADE"),
+        primary_key=True,
+    )

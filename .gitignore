@@ -22,3 +22,9 @@ htmlcov/
 # Bases locales temporales
 *.sqlite
 *.sqlite3
+
+# Artefactos locales pesados
+tools/
+models/
+uploads/
+*.zip

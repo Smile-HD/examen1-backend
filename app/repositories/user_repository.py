@@ -45,6 +45,10 @@ class UserRepository:
         self.db.flush()
         return role
 
+    def get_role_by_name(self, role_name: str) -> Rol | None:
+        # Recupera un rol por nombre si existe en catalogo.
+        return self.db.query(Rol).filter(Rol.nombre == role_name).first()
+
     def assign_role_to_user(self, user_id: int, role_id: int) -> None:
         # Asocia usuario y rol en tabla puente rol_usuario.
         exists = (
@@ -61,8 +65,27 @@ class UserRepository:
         self.db.add(RolUsuario(usuario_id=user_id, rol_id=role_id))
         self.db.flush()
 
+    def remove_role_from_user(self, user_id: int, role_id: int) -> None:
+        # Quita asociacion usuario-rol cuando exista.
+        relation = (
+            self.db.query(RolUsuario)
+            .filter(
+                RolUsuario.usuario_id == user_id,
+                RolUsuario.rol_id == role_id,
+            )
+            .first()
+        )
+        if not relation:
+            return
+
+        self.db.delete(relation)
+        self.db.flush()
+
     def create_cliente_profile(self, user_id: int) -> None:
         # Crea especializacion de usuario como cliente.
+        exists = self.db.query(Cliente).filter(Cliente.id == user_id).first()
+        if exists:
+            return
         self.db.add(Cliente(id=user_id))
         self.db.flush()
 
@@ -78,13 +101,18 @@ class UserRepository:
         )
         self.db.flush()
 
-    def create_tecnico_profile(self, user_id: int, estado: str = "disponible") -> None:
+    def create_tecnico_profile(
+        self,
+        user_id: int,
+        estado: str = "disponible",
+        taller_id: int | None = None,
+    ) -> None:
         # Crea especializacion de usuario como tecnico para uso futuro en modulo web.
         exists = self.db.query(Tecnico).filter(Tecnico.id == user_id).first()
         if exists:
             return
 
-        self.db.add(Tecnico(id=user_id, estado=estado))
+        self.db.add(Tecnico(id=user_id, estado=estado, taller_id=taller_id))
         self.db.flush()
 
     def get_role_names_by_user_id(self, user_id: int) -> set[str]:
@@ -101,7 +129,16 @@ class UserRepository:
         # Permite separar acceso por tipo de actor sin depender solo del catalogo de roles.
         is_cliente = self.db.query(Cliente.id).filter(Cliente.id == user_id).first() is not None
         is_taller = self.db.query(Taller.id).filter(Taller.id == user_id).first() is not None
-        is_tecnico = self.db.query(Tecnico.id).filter(Tecnico.id == user_id).first() is not None
+        # Un tecnico solo se considera activo si tiene taller asignado.
+        is_tecnico = (
+            self.db.query(Tecnico.id)
+            .filter(
+                Tecnico.id == user_id,
+                Tecnico.taller_id.isnot(None),
+            )
+            .first()
+            is not None
+        )
 
         return {
             "cliente": is_cliente,

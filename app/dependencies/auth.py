@@ -82,3 +82,65 @@ def require_mobile_cliente(
         )
 
     return current_user
+
+
+def require_web_taller(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthenticatedUser:
+    # Exige taller autenticado desde canal web para operar solicitudes.
+    if current_user.canal != "web":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para canal web de talleres.",
+        )
+
+    repository = UserRepository(db)
+    flags = repository.get_specialization_flags(current_user.user_id)
+    is_taller = flags.get("taller", False)
+
+    if not is_taller and "taller" in current_user.roles:
+        # Recupera cuentas legacy con rol "taller" pero sin fila en tabla `taller`.
+        try:
+            workshop_name = f"Taller de {current_user.email}" if current_user.email else f"Taller {current_user.user_id}"
+            repository.create_taller_profile(
+                current_user.user_id,
+                workshop_name,
+                None,
+            )
+            db.commit()
+            is_taller = True
+        except Exception:
+            db.rollback()
+
+    if not is_taller:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo talleres pueden ejecutar esta operacion.",
+        )
+
+    return current_user
+
+
+def require_mobile_tecnico(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AuthenticatedUser:
+    # Exige tecnico autenticado desde canal mobile para operaciones en campo.
+    if current_user.canal != "mobile":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para canal mobile de tecnicos.",
+        )
+
+    repository = UserRepository(db)
+    flags = repository.get_specialization_flags(current_user.user_id)
+    is_tecnico = flags.get("tecnico", False)
+
+    if not is_tecnico:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo tecnicos pueden ejecutar esta operacion.",
+        )
+
+    return current_user

@@ -16,7 +16,7 @@ class UserRegistrationRequest(BaseModel):
     correo: str = Field(max_length=150)
     password: str = Field(min_length=8, max_length=128)
     telefono: str | None = Field(default=None, max_length=25)
-    tipo_usuario: str = Field(description="Valores permitidos: cliente | taller")
+    tipo_usuario: str = Field(description="Valores permitidos: cliente | taller | empleado | tecnico")
     nombre_taller: str | None = Field(default=None, max_length=150)
     ubicacion_taller: str | None = Field(default=None, max_length=500)
 

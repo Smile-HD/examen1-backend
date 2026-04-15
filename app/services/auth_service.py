@@ -35,12 +35,21 @@ def _resolve_effective_roles(
     return effective_roles
 
 
-def _resolve_primary_profile(effective_roles: set[str]) -> str:
-    # Prioriza perfil web cuando existe, de lo contrario retorna cliente.
-    if "taller" in effective_roles:
-        return "taller"
+def _resolve_primary_profile(*, effective_roles: set[str], channel: str) -> str:
+    # En mobile priorizamos tecnico sobre cliente; en web siempre prioriza taller.
+    if channel == "web":
+        if "taller" in effective_roles:
+            return "taller"
+        if "tecnico" in effective_roles:
+            return "tecnico"
+        return "cliente"
+
     if "tecnico" in effective_roles:
         return "tecnico"
+    if "cliente" in effective_roles:
+        return "cliente"
+    if "taller" in effective_roles:
+        return "taller"
     return "cliente"
 
 
@@ -61,12 +70,12 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
         specialization_flags=specialization_flags,
     )
 
-    # Regla de separacion: mobile es para cliente; web es para taller/tecnico.
-    if data.canal == "mobile" and "cliente" not in effective_roles:
+    # Regla de separacion: mobile para cliente/tecnico; web solo para taller.
+    if data.canal == "mobile" and not ({"cliente", "tecnico"} & effective_roles):
         raise ChannelAccessDeniedError(
-            "Este usuario no tiene acceso al canal mobile. Usa el canal web."
+            "Este usuario no tiene acceso al canal mobile."
         )
-    if data.canal == "web" and not ({"taller", "tecnico"} & effective_roles):
+    if data.canal == "web" and "taller" not in effective_roles:
         raise ChannelAccessDeniedError(
             "Este usuario no tiene acceso al canal web de talleres."
         )
@@ -74,7 +83,7 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
     # Nota de negocio: un tecnico inicia como cliente y luego puede sumar rol tecnico.
     # Por eso se conservan todos los roles efectivos en la sesion.
     sorted_roles = sorted(effective_roles)
-    profile = _resolve_primary_profile(effective_roles)
+    profile = _resolve_primary_profile(effective_roles=effective_roles, channel=data.canal)
 
     token = create_access_token(
         user_id=user.id,

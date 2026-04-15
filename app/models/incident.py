@@ -53,6 +53,7 @@ class Incidente(Base):
     latitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)
     longitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)
     prioridad: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=2)
+    info_reintentos: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
 
 
 class Evidencia(Base):
@@ -86,7 +87,19 @@ class Historial(Base):
     incidente_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("incidente.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    cliente_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("cliente.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
     accion: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -97,3 +110,120 @@ class Historial(Base):
         nullable=False,
     )
     actor_usuario_id: Mapped[int] = mapped_column(Integer, ForeignKey("usuario.id"), nullable=True)
+
+
+class Solicitud(Base):
+    # Solicitudes enviadas a talleres para aceptar/rechazar atencion.
+
+    __tablename__ = "solicitud"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incidente_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("incidente.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    estado: Mapped[str] = mapped_column(String(20), nullable=False)
+    tecnico_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tecnico.id"),
+        nullable=True,
+    )
+    transporte_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("transporte.id"),
+        nullable=True,
+    )
+    comentario: Mapped[str] = mapped_column(Text, nullable=True)
+    fecha_asignacion: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class MetricaServicio(Base):
+    # Metricas finales de atencion para cliente y taller.
+
+    __tablename__ = "metrica_servicio"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    incidente_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("incidente.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    solicitud_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("solicitud.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    taller_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("taller.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    cliente_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("cliente.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tecnico_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tecnico.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    transporte_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("transporte.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tiempo_minutos: Mapped[int] = mapped_column(Integer, nullable=False)
+    costo_total: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    comision_plataforma: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    distancia_km: Mapped[float] = mapped_column(Numeric(8, 2), nullable=True)
+    observaciones: Mapped[str] = mapped_column(Text, nullable=True)
+    fecha_cierre: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class TecnicoUbicacion(Base):
+    # Posicion actual del tecnico enviada desde mobile para seguimiento simple.
+
+    __tablename__ = "tecnico_ubicacion"
+
+    tecnico_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tecnico.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    solicitud_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("solicitud.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    latitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    longitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    precision_metros: Mapped[float] = mapped_column(Numeric(8, 2), nullable=True)
+    actualizada_en: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )

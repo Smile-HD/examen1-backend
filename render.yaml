@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: emergencias-backend
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_SECRET_KEY
+        sync: false
+      - key: AI_ENABLE_AUDIO_TRANSCRIPTION
+        value: "true"
+      - key: AI_TRANSCRIPTION_PROVIDER
+        value: vosk
+      - key: AI_VOSK_MODEL_PATH
+        value: /app/models/vosk-model-small-es-0.42
+      - key: AI_VOSK_SAMPLE_RATE
+        value: "16000"
+      - key: AI_VOSK_FFMPEG_PATH
+        value: ffmpeg
+      - key: AI_ENABLE_HF_IMAGE
+        value: "false"

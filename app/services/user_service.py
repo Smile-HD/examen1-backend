@@ -28,10 +28,12 @@ def register_user(data: UserRegistrationRequest, db: Session) -> UserRegistratio
         raise UserAlreadyExistsError("El usuario ya existe con ese correo.")
 
     role = data.tipo_usuario.strip().lower()
-    if role not in {"cliente", "taller"}:
+    if role not in {"cliente", "taller", "empleado", "tecnico"}:
         raise UserRegistrationValidationError(
-            "tipo_usuario invalido. Debe ser 'cliente' o 'taller'."
+            "tipo_usuario invalido. Debe ser 'cliente', 'taller', 'empleado' o 'tecnico'."
         )
+
+    stored_role = "tecnico" if role in {"empleado", "tecnico"} else role
 
     try:
         # 1) Guardamos el usuario base con contrasena cifrada.
@@ -44,24 +46,30 @@ def register_user(data: UserRegistrationRequest, db: Session) -> UserRegistratio
 
         # 2) Creamos/obtenemos rol y lo vinculamos al usuario.
         role_entity = repository.get_or_create_role(
-            role,
-            f"Rol de {role} dentro de la plataforma de emergencias vehiculares.",
+            stored_role,
+            f"Rol de {stored_role} dentro de la plataforma de emergencias vehiculares.",
         )
         repository.assign_role_to_user(user.id, role_entity.id)
 
-        # 3) Creamos especializacion segun actor iniciador del caso de uso.
+        if stored_role == "tecnico":
+            cliente_role_entity = repository.get_or_create_role(
+                "cliente",
+                "Rol de cliente dentro de la plataforma de emergencias vehiculares.",
+            )
+            repository.assign_role_to_user(user.id, cliente_role_entity.id)
+
+        # 3) Creamos especializacion segun actor iniciador del caso de uso.     
         if role == "cliente":
             repository.create_cliente_profile(user.id)
-        else:
-            workshop_name = data.nombre_taller or f"Taller de {data.nombre}"
+        elif role == "taller":
+            workshop_name = data.nombre_taller or f"Taller de {data.nombre}"    
             repository.create_taller_profile(user.id, workshop_name, data.ubicacion_taller)
-
-        # Confirmamos transaccion solo si todo el flujo fue exitoso.
+        else:
+            repository.create_tecnico_profile(user.id)
+            repository.create_cliente_profile(user.id)
         db.commit()
-        db.refresh(user)
     except IntegrityError as exc:
         db.rollback()
-        # Cubrimos carrera concurrente por clave unica de correo.
         raise UserAlreadyExistsError("El usuario ya existe con ese correo.") from exc
     except Exception:
         db.rollback()
