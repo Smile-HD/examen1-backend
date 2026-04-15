@@ -24,7 +24,7 @@ htmlcov/
 *.sqlite3
 
 # Artefactos locales pesados
-tools/
-models/
-uploads/
+/tools/
+/models/
+/uploads/
 *.zip
