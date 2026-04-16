@@ -1,6 +1,7 @@
 # Servicio para registrar tokens y enviar notificaciones push via FCM.
 
 import json
+import logging
 import os
 
 import httpx
@@ -21,6 +22,8 @@ _INVALID_FCM_V1_ERRORS = {
     "INVALID_ARGUMENT",
 }
 
+logger = logging.getLogger(__name__)
+
 
 def _load_service_account_info_from_env() -> dict[str, object] | None:
     # Carga JSON de cuenta de servicio desde variable de entorno para entornos cloud.
@@ -31,6 +34,7 @@ def _load_service_account_info_from_env() -> dict[str, object] | None:
     try:
         info = json.loads(raw_json)
     except json.JSONDecodeError:
+        logger.warning("FCM_SERVICE_ACCOUNT_JSON no es un JSON valido.")
         return None
 
     private_key = info.get("private_key")
@@ -131,8 +135,14 @@ def register_client_push_token(
             plataforma=platform,
         )
         db.commit()
+        logger.info(
+            "Token push registrado para usuario_id=%s plataforma=%s",
+            cliente_id,
+            platform,
+        )
     except Exception:
         db.rollback()
+        logger.exception("Fallo al registrar token push para usuario_id=%s", cliente_id)
         raise
 
     return PushTokenRegisterResponse(
@@ -154,11 +164,19 @@ def send_client_push_best_effort(
     fcm_v1_context = _resolve_fcm_v1_access_token_and_project()
 
     if not server_key and not fcm_v1_context:
+        logger.warning(
+            "Push omitido para cliente_id=%s: sin credenciales FCM.",
+            cliente_id,
+        )
         return
 
     repository = PushRepository(db)
     rows = repository.list_active_tokens_for_user(cliente_id)
     if not rows:
+        logger.info(
+            "Push omitido para cliente_id=%s: no hay tokens activos registrados.",
+            cliente_id,
+        )
         return
 
     use_v1 = fcm_v1_context is not None
@@ -216,9 +234,21 @@ def send_client_push_best_effort(
                 try:
                     response = client.post(send_url, headers=headers, json=payload)
                 except Exception:
+                    logger.exception(
+                        "Error de red enviando push a cliente_id=%s token_id=%s",
+                        cliente_id,
+                        row.id,
+                    )
                     continue
 
                 if response.status_code >= 400:
+                    logger.warning(
+                        "FCM rechazo push cliente_id=%s token_id=%s status=%s body=%s",
+                        cliente_id,
+                        row.id,
+                        response.status_code,
+                        response.text[:300],
+                    )
                     if use_v1 and _is_invalid_fcm_v1_token_response(response):
                         invalid_ids.append(int(row.id))
                     continue
@@ -230,6 +260,11 @@ def send_client_push_best_effort(
 
                 details = result.get("results")
                 if not isinstance(details, list) or not details:
+                    logger.info(
+                        "Push enviado via FCM v1 a cliente_id=%s token_id=%s",
+                        cliente_id,
+                        row.id,
+                    )
                     continue
 
                 first = details[0]
@@ -239,9 +274,21 @@ def send_client_push_best_effort(
                 error_name = first.get("error")
                 if isinstance(error_name, str) and error_name in _INVALID_FCM_ERRORS:
                     invalid_ids.append(int(row.id))
+                    logger.warning(
+                        "Token invalido detectado por FCM legacy cliente_id=%s token_id=%s error=%s",
+                        cliente_id,
+                        row.id,
+                        error_name,
+                    )
 
         if invalid_ids:
             repository.deactivate_tokens(invalid_ids)
             db.commit()
+            logger.info(
+                "Tokens inactivos por errores FCM cliente_id=%s token_ids=%s",
+                cliente_id,
+                invalid_ids,
+            )
     except Exception:
         db.rollback()
+        logger.exception("Error inesperado durante envio push a cliente_id=%s", cliente_id)
