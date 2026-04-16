@@ -1085,6 +1085,21 @@ def decide_workshop_request(
             db.commit()
             db.refresh(request)
             db.refresh(incident)
+
+            send_client_push_best_effort(
+                cliente_id=incident.cliente_id,
+                titulo="Tu solicitud fue rechazada",
+                cuerpo="Un taller rechazó tu solicitud. Seguiremos intentando con otras opciones.",
+                data={
+                    "evento": "solicitud_rechazada_taller",
+                    "solicitud_id": str(request.id),
+                    "incidente_id": str(incident.id),
+                    "estado_solicitud": str(request.estado),
+                    "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+                },
+                db=db,
+            )
+
             return WorkshopRequestDecisionResponse(
                 solicitud_id=request.id,
                 incidente_id=incident.id,
