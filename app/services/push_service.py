@@ -12,6 +12,7 @@ from app.repositories.push_repository import PushRepository
 
 _FCM_SEND_URL = "https://fcm.googleapis.com/fcm/send"
 _FCM_V1_SCOPE = ["https://www.googleapis.com/auth/firebase.messaging"]
+_FCM_ANDROID_CHANNEL_ID = os.getenv("FCM_ANDROID_CHANNEL_ID", "emergencias_push_foreground").strip() or "emergencias_push_foreground"
 _INVALID_FCM_ERRORS = {
     "NotRegistered",
     "InvalidRegistration",
@@ -207,7 +208,9 @@ def send_client_push_best_effort(
                             "android": {
                                 "priority": "HIGH",
                                 "notification": {
+                                    "channel_id": _FCM_ANDROID_CHANNEL_ID,
                                     "sound": "default",
+                                    "notification_priority": "PRIORITY_HIGH",
                                 },
                             },
                             "apns": {
