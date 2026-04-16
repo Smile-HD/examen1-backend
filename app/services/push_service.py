@@ -1,5 +1,6 @@
 # Servicio para registrar tokens y enviar notificaciones push via FCM.
 
+import json
 import os
 
 import httpx
@@ -9,11 +10,108 @@ from app.models.push_schemas import PushTokenRegisterRequest, PushTokenRegisterR
 from app.repositories.push_repository import PushRepository
 
 _FCM_SEND_URL = "https://fcm.googleapis.com/fcm/send"
+_FCM_V1_SCOPE = ["https://www.googleapis.com/auth/firebase.messaging"]
 _INVALID_FCM_ERRORS = {
     "NotRegistered",
     "InvalidRegistration",
     "MismatchSenderId",
 }
+_INVALID_FCM_V1_ERRORS = {
+    "UNREGISTERED",
+    "INVALID_ARGUMENT",
+}
+
+
+def _load_service_account_info_from_env() -> dict[str, object] | None:
+    # Carga JSON de cuenta de servicio desde variable de entorno para entornos cloud.
+    raw_json = os.getenv("FCM_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw_json:
+        return None
+
+    try:
+        info = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return None
+
+    private_key = info.get("private_key")
+    if isinstance(private_key, str) and "\\n" in private_key:
+        info["private_key"] = private_key.replace("\\n", "\n")
+
+    return info
+
+
+def _resolve_fcm_v1_access_token_and_project() -> tuple[str, str] | None:
+    # Obtiene access token OAuth2 para FCM HTTP v1 y el project id.
+    try:
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+        from google.oauth2 import service_account
+    except Exception:
+        return None
+
+    credentials = None
+    service_info = _load_service_account_info_from_env()
+    if service_info:
+        try:
+            credentials = service_account.Credentials.from_service_account_info(
+                service_info,
+                scopes=_FCM_V1_SCOPE,
+            )
+        except Exception:
+            credentials = None
+    else:
+        service_account_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if service_account_path:
+            try:
+                credentials = service_account.Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=_FCM_V1_SCOPE,
+                )
+            except Exception:
+                credentials = None
+
+    if not credentials:
+        return None
+
+    try:
+        credentials.refresh(GoogleAuthRequest())
+    except Exception:
+        return None
+
+    access_token = (credentials.token or "").strip()
+    project_id = (
+        os.getenv("FCM_PROJECT_ID", "").strip()
+        or str(getattr(credentials, "project_id", "") or "").strip()
+    )
+
+    if not access_token or not project_id:
+        return None
+
+    return (access_token, project_id)
+
+
+def _is_invalid_fcm_v1_token_response(response: httpx.Response) -> bool:
+    # Interpreta errores FCM v1 para inactivar tokens no registrados.
+    try:
+        payload = response.json()
+    except Exception:
+        return False
+
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return False
+
+    details = error.get("details")
+    if not isinstance(details, list):
+        return False
+
+    for item in details:
+        if not isinstance(item, dict):
+            continue
+        error_code = item.get("errorCode")
+        if isinstance(error_code, str) and error_code.upper() in _INVALID_FCM_V1_ERRORS:
+            return True
+
+    return False
 
 
 def register_client_push_token(
@@ -53,7 +151,9 @@ def send_client_push_best_effort(
 ) -> None:
     # Envia push al cliente; si falla no rompe flujo principal de negocio.
     server_key = os.getenv("FCM_SERVER_KEY", "").strip()
-    if not server_key:
+    fcm_v1_context = _resolve_fcm_v1_access_token_and_project()
+
+    if not server_key and not fcm_v1_context:
         return
 
     repository = PushRepository(db)
@@ -61,33 +161,66 @@ def send_client_push_best_effort(
     if not rows:
         return
 
-    headers = {
-        "Authorization": f"key={server_key}",
-        "Content-Type": "application/json",
-    }
+    use_v1 = fcm_v1_context is not None
+    headers = {"Content-Type": "application/json"}
+    send_url = _FCM_SEND_URL
+
+    if use_v1:
+        access_token, project_id = fcm_v1_context
+        headers["Authorization"] = f"Bearer {access_token}"
+        send_url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+    else:
+        headers["Authorization"] = f"key={server_key}"
 
     invalid_ids: list[int] = []
 
     try:
         with httpx.Client(timeout=6.0) as client:
             for row in rows:
-                payload = {
-                    "to": row.token,
-                    "priority": "high",
-                    "notification": {
-                        "title": titulo,
-                        "body": cuerpo,
-                        "sound": "default",
-                    },
-                    "data": data or {},
-                }
+                if use_v1:
+                    payload = {
+                        "message": {
+                            "token": row.token,
+                            "notification": {
+                                "title": titulo,
+                                "body": cuerpo,
+                            },
+                            "data": data or {},
+                            "android": {
+                                "priority": "HIGH",
+                                "notification": {
+                                    "sound": "default",
+                                },
+                            },
+                            "apns": {
+                                "payload": {
+                                    "aps": {
+                                        "sound": "default",
+                                    }
+                                }
+                            },
+                        }
+                    }
+                else:
+                    payload = {
+                        "to": row.token,
+                        "priority": "high",
+                        "notification": {
+                            "title": titulo,
+                            "body": cuerpo,
+                            "sound": "default",
+                        },
+                        "data": data or {},
+                    }
 
                 try:
-                    response = client.post(_FCM_SEND_URL, headers=headers, json=payload)
+                    response = client.post(send_url, headers=headers, json=payload)
                 except Exception:
                     continue
 
                 if response.status_code >= 400:
+                    if use_v1 and _is_invalid_fcm_v1_token_response(response):
+                        invalid_ids.append(int(row.id))
                     continue
 
                 try:
