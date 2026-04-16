@@ -1475,7 +1475,7 @@ def reject_service_by_technician(
             "Solo puedes rechazar una solicitud activa asignada."
         )
 
-    technician_id = request.tecnico_id
+    technician_id = request.tecnico_id or tecnico_id
     transport_id = request.transporte_id
 
     try:
@@ -1488,6 +1488,11 @@ def reject_service_by_technician(
             transport = repository.get_transport_by_id(transport_id)
             if transport:
                 repository.update_transport_state(transport, "disponible")
+        elif request.taller_id:
+            # Fallback para estados legacy: libera cualquier transporte marcado como asignado.
+            assigned_transports = repository.list_assigned_transports_for_workshop(request.taller_id)
+            for assigned_transport in assigned_transports:
+                repository.update_transport_state(assigned_transport, "disponible")
 
         repository.update_request(
             request,

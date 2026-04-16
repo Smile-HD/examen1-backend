@@ -387,6 +387,17 @@ class IncidentRepository:
         # Recupera transporte por id para liberar recursos al finalizar servicio.
         return self.db.query(Transporte).filter(Transporte.id == transport_id).first()
 
+    def list_assigned_transports_for_workshop(self, taller_id: int) -> list[Transporte]:
+        # Lista transportes marcados como asignados para saneo de estado operativo.
+        return (
+            self.db.query(Transporte)
+            .filter(
+                Transporte.taller_id == taller_id,
+                Transporte.estado == "asignado",
+            )
+            .all()
+        )
+
     def get_metric_by_incident(self, incidente_id: int) -> MetricaServicio | None:
         # Obtiene metrica final del incidente si existe.
         return (
