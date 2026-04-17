@@ -70,6 +70,7 @@ class Evidencia(Base):
     )
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=True)
+    url_audio: Mapped[str] = mapped_column(Text, nullable=True)
     texto_extraido: Mapped[str] = mapped_column(Text, nullable=True)
     fecha_subida: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

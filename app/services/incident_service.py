@@ -1,7 +1,5 @@
 ﻿"""Servicio de negocio para incidentes (CU4, reenvio de evidencia y candidatos)."""
 
-import math
-import re
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
@@ -37,11 +35,11 @@ from app.models.incident_schemas import (
     TechnicianIncomingRequestsResponse,
     TechnicianRequestRejectRequest,
     TechnicianRequestRejectResponse,
-    WorkshopCandidateItem,
 )
 from app.repositories.incident_repository import IncidentRepository
 from app.services.push_service import send_client_push_best_effort
 from app.services.ai_incident_processor import AIIncidentProcessingResult, process_incident_payload_for_ai
+from app.services.workshop_assignment_service import build_incident_candidates
 
 
 class VehicleNotOwnedError(Exception):
@@ -114,15 +112,6 @@ class TechnicianAccessDeniedError(Exception):
     pass
 
 
-PROBLEM_SERVICE_MAP: dict[str, set[str]] = {
-    "bateria": {"bateria", "auxilio_electrico", "mecanica_general"},
-    "llanta": {"llanta", "vulcanizado", "mecanica_general"},
-    "choque": {"carroceria", "grua", "accidentes", "mecanica_general"},
-    "motor": {"motor", "mecanica_general", "grua"},
-    "llave": {"cerrajeria", "apertura", "mecanica_general"},
-    "otros": {"mecanica_general"},
-}
-
 MAX_INFO_RETRIES = 3
 
 
@@ -162,21 +151,23 @@ def _persist_incident_evidence(
     audio_url: str | None,
     ai_result: AIIncidentProcessingResult,
 ) -> None:
-    # Guarda evidencias multimodales y resumen de forma consistente para CU5.
-    if image_url:
+    # Guarda evidencias multimodales y resumen de forma consistente
+    if image_url or audio_url:
+        evidence_type = "multimedia" if image_url and audio_url else ("imagen" if image_url else "audio")
+        extracted_parts = [
+            part
+            for part in [
+                f"Imagen: {ai_result.image_summary}" if ai_result.image_summary else None,
+                f"Audio: {ai_result.audio_transcripcion}" if ai_result.audio_transcripcion else None,
+            ]
+            if part
+        ]
         repository.create_evidence(
             incidente_id=incidente_id,
-            tipo="imagen",
+            tipo=evidence_type,
             url=image_url,
-            texto_extraido=ai_result.image_summary,
-        )
-
-    if audio_url:
-        repository.create_evidence(
-            incidente_id=incidente_id,
-            tipo="audio",
-            url=audio_url,
-            texto_extraido=ai_result.audio_transcripcion,
+            url_audio=audio_url,
+            texto_extraido="\n".join(extracted_parts) if extracted_parts else None,
         )
 
     if ai_result.texto_extraido:
@@ -308,6 +299,7 @@ def _build_incident_detail_response(
                 evidencia_id=evidence.id,
                 tipo=evidence.tipo,
                 url=evidence.url,
+                url_audio=evidence.url_audio,
                 texto_extraido=evidence.texto_extraido,
             )
             for evidence in evidences
@@ -372,161 +364,6 @@ def _get_live_technician_location(
         "precision_metros": float(entry.precision_metros) if entry.precision_metros is not None else None,
         "actualizada_en": entry.actualizada_en,
     }
-
-
-def _parse_location_coordinates(raw_location: str | None) -> tuple[float, float] | None:
-    # Intenta extraer latitud,longitud desde texto de ubicacion del taller.
-    if not raw_location:
-        return None
-
-    match = re.search(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", raw_location)
-    if not match:
-        return None
-
-    lat = float(match.group(1))
-    lon = float(match.group(2))
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-        return None
-
-    return (lat, lon)
-
-
-def _calculate_distance_km(
-    incident_lat: float | None,
-    incident_lon: float | None,
-    workshop_lat: float | None,
-    workshop_lon: float | None,
-) -> float | None:
-    # Distancia Haversine para ranking geografico.
-    if (
-        incident_lat is None
-        or incident_lon is None
-        or workshop_lat is None
-        or workshop_lon is None
-    ):
-        return None
-
-    radius = 6371.0
-    lat1 = math.radians(float(incident_lat))
-    lon1 = math.radians(float(incident_lon))
-    lat2 = math.radians(float(workshop_lat))
-    lon2 = math.radians(float(workshop_lon))
-
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-
-    haversine = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    arc = 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
-    return round(radius * arc, 2)
-
-
-def _score_workshop_candidate(
-    *,
-    priority: int,
-    service_match: bool,
-    capacity_available: bool,
-    distance_km: float | None,
-) -> float:
-    # Calcula score ponderado de taller segun prioridad del incidente.
-    if priority >= 3:
-        weights = {
-            "servicio": 0.25,
-            "distancia": 0.30,
-            "disponibilidad": 0.25,
-            "capacidad": 0.20,
-        }
-    elif priority == 2:
-        weights = {
-            "servicio": 0.30,
-            "distancia": 0.25,
-            "disponibilidad": 0.20,
-            "capacidad": 0.25,
-        }
-    else:
-        weights = {
-            "servicio": 0.30,
-            "distancia": 0.20,
-            "disponibilidad": 0.20,
-            "capacidad": 0.30,
-        }
-
-    service_score = 1.0 if service_match else 0.25
-    availability_score = 1.0
-    capacity_score = 1.0 if capacity_available else 0.20
-    distance_score = 0.35 if distance_km is None else (1 / (1 + (distance_km / 10)))
-
-    weighted = (
-        weights["servicio"] * service_score
-        + weights["distancia"] * distance_score
-        + weights["disponibilidad"] * availability_score
-        + weights["capacidad"] * capacity_score
-    )
-    return round(weighted * 100, 2)
-
-
-def _build_incident_candidates(
-    *,
-    incident: Incidente,
-    workshop_rows: list[dict[str, object]],
-) -> list[WorkshopCandidateItem]:
-    # Arma ranking de candidatos con criterios de ubicacion, tipo, capacidad y prioridad.
-    expected_services = PROBLEM_SERVICE_MAP.get(incident.tipo_problema, {"mecanica_general"})
-
-    pre_candidates: list[tuple[WorkshopCandidateItem, bool]] = []
-    for row in workshop_rows:
-        services = {str(name).strip().lower() for name in row.get("services", [])}
-        service_match = bool(services.intersection(expected_services)) if services else False
-
-        open_requests = int(row.get("open_requests", 0))
-        capacity_limit = 3
-        capacity_available = open_requests < capacity_limit
-
-        workshop_coords = _parse_location_coordinates(str(row.get("ubicacion") or ""))
-        distance_km = _calculate_distance_km(
-            incident.latitud,
-            incident.longitud,
-            workshop_coords[0] if workshop_coords else None,
-            workshop_coords[1] if workshop_coords else None,
-        )
-
-        score = _score_workshop_candidate(
-            priority=incident.prioridad,
-            service_match=service_match,
-            capacity_available=capacity_available,
-            distance_km=distance_km,
-        )
-
-        reason_parts = [
-            "coincide_tipo" if service_match else "tipo_no_especifico",
-            "capacidad_ok" if capacity_available else "capacidad_cargada",
-            f"distancia={distance_km}km" if distance_km is not None else "distancia_desconocida",
-        ]
-
-        pre_candidates.append(
-            (
-                WorkshopCandidateItem(
-                    taller_id=int(row["taller_id"]),
-                    nombre_taller=str(row["nombre_taller"]),
-                    disponibilidad=str(row.get("estado") or "activo"),
-                    capacidad_disponible=capacity_available,
-                    cumple_tipo_problema=service_match,
-                    distancia_km=distance_km,
-                    puntuacion=score,
-                    servicios=sorted(services),
-                    razon=", ".join(reason_parts),
-                ),
-                service_match,
-            )
-        )
-
-    # Si hay talleres que cumplen tipo de problema, priorizamos solo esos.
-    has_direct_match = any(service_match for _, service_match in pre_candidates)
-    filtered_candidates = [
-        candidate for candidate, service_match in pre_candidates if (service_match or not has_direct_match)
-    ]
-
-    filtered_candidates.sort(key=lambda candidate: candidate.puntuacion, reverse=True)
-    return filtered_candidates
 
 
 def report_incident(
@@ -823,7 +660,7 @@ def list_workshop_candidates(
         )
 
     workshop_rows = repository.list_active_workshops_with_context()
-    candidates = _build_incident_candidates(incident=incident, workshop_rows=workshop_rows)
+    candidates = build_incident_candidates(incident=incident, workshop_rows=workshop_rows)
 
     if not candidates:
         raise NoWorkshopCandidatesError("No hay talleres candidatos disponibles en este momento.")
@@ -858,7 +695,7 @@ def select_workshops_for_incident(
         )
 
     workshop_rows = repository.list_active_workshops_with_context()
-    candidates = _build_incident_candidates(incident=incident, workshop_rows=workshop_rows)
+    candidates = build_incident_candidates(incident=incident, workshop_rows=workshop_rows)
     allowed_workshop_ids = {candidate.taller_id for candidate in candidates}
 
     invalid_selection = [workshop_id for workshop_id in data.talleres_ids if workshop_id not in allowed_workshop_ids]
@@ -1021,6 +858,7 @@ def list_workshop_incoming_requests(
                         evidencia_id=evidence.id,
                         tipo=evidence.tipo,
                         url=evidence.url,
+                        url_audio=evidence.url_audio,
                         texto_extraido=evidence.texto_extraido,
                     )
                     for evidence in evidencias

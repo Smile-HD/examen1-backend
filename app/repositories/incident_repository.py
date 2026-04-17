@@ -147,6 +147,7 @@ class IncidentRepository:
         incidente_id: int,
         tipo: str,
         url: str | None,
+        url_audio: str | None = None,
         texto_extraido: str | None,
     ) -> Evidencia:
         # Guarda evidencia adjunta para enriquecer el procesamiento del incidente.
@@ -154,6 +155,7 @@ class IncidentRepository:
             incidente_id=incidente_id,
             tipo=tipo,
             url=url,
+            url_audio=url_audio,
             texto_extraido=texto_extraido,
         )
         self.db.add(evidence)
@@ -161,8 +163,8 @@ class IncidentRepository:
         return evidence
 
     def list_active_workshops_with_context(self) -> list[dict[str, object]]:
-        # Recupera talleres activos con carga actual y servicios para fase de candidatos.
-        workshops = self.db.query(Taller).filter(Taller.estado == "activo").all()
+        # Recupera talleres con su contexto operativo para ranking estricto y fallback.
+        workshops = self.db.query(Taller).all()
         if not workshops:
             return []
 
@@ -180,6 +182,33 @@ class IncidentRepository:
             .all()
         )
         open_requests_by_workshop = {taller_id: int(count) for taller_id, count in load_rows}
+
+        # Recursos realmente disponibles por taller.
+        technician_rows = (
+            self.db.query(Tecnico.taller_id, func.count(Tecnico.id))
+            .filter(
+                Tecnico.taller_id.in_(workshop_ids),
+                Tecnico.estado == "disponible",
+            )
+            .group_by(Tecnico.taller_id)
+            .all()
+        )
+        available_technicians_by_workshop = {
+            taller_id: int(count) for taller_id, count in technician_rows
+        }
+
+        transport_rows = (
+            self.db.query(Transporte.taller_id, func.count(Transporte.id))
+            .filter(
+                Transporte.taller_id.in_(workshop_ids),
+                Transporte.estado == "disponible",
+            )
+            .group_by(Transporte.taller_id)
+            .all()
+        )
+        available_transports_by_workshop = {
+            taller_id: int(count) for taller_id, count in transport_rows
+        }
 
         # Servicios disponibles por taller.
         service_rows = (
@@ -199,8 +228,12 @@ class IncidentRepository:
                     "taller_id": workshop.id,
                     "nombre_taller": workshop.nombre,
                     "ubicacion": workshop.ubicacion,
+                    "latitud": float(workshop.latitud) if workshop.latitud is not None else None,
+                    "longitud": float(workshop.longitud) if workshop.longitud is not None else None,
                     "estado": workshop.estado,
                     "open_requests": open_requests_by_workshop.get(workshop.id, 0),
+                    "available_technicians": available_technicians_by_workshop.get(workshop.id, 0),
+                    "available_transports": available_transports_by_workshop.get(workshop.id, 0),
                     "services": sorted(services_by_workshop.get(workshop.id, set())),
                 }
             )

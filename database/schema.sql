@@ -147,6 +147,7 @@ CREATE TABLE evidencia (
     incidente_id INT NOT NULL,
     tipo VARCHAR(20) NOT NULL,
     url TEXT,
+    url_audio TEXT,
     texto_extraido TEXT,
     fecha_subida TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (incidente_id) REFERENCES incidente(id) ON DELETE CASCADE

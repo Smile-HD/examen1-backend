@@ -1,11 +1,10 @@
 """Integracion IA para procesamiento inicial de incidentes.
 
-Este modulo implementa integraciones opcionales y seguras:
-- Transcripcion de audio configurable (Vosk, Whisper API o Whisper local).
-- Hugging Face Inference API para etiquetas de imagen.
+Nucleo actual del modulo:
+- Transcripcion de audio exclusivamente con Vosk (offline/local).
+- Analisis de imagen con Hugging Face Inference API.
+- Clasificacion heuristica del tipo de problema y prioridad.
 
-Si no hay dependencias o configuracion, el flujo cae a modo placeholder
-sin romper el registro del incidente.
 """
 
 from dataclasses import dataclass
@@ -65,7 +64,7 @@ SERVICE_TEXT_KEYWORDS: dict[str, list[str]] = {
         "falla mecanica", "averia", "descompuesto", "ruido raro", "vibracion", "diagnostico",
     ],
     "bateria": [
-        "bateria", "no arranca", "no enciende", "sin corriente", "sin energia", "descargad", "alternador", "arranque",
+        "bateria", "no arranca", "no enciende", "sin corriente", "sin energia", "descargad", "alternador", "arranque","batery",
     ],
     "auxilio_electrico": [
         "falla electrica", "corto", "fusible", "tablero", "luces", "electrico", "cables", "switch",
@@ -127,14 +126,14 @@ SERVICE_RANKING = [
     "mecanica_general",
 ]
 
-
+# Volver texto con caracteres especial a normales 
 def _normalize_text(value: str | None) -> str:
     if not value:
         return ""
     ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     return ascii_value.lower()
 
-
+# Revisa si hay palabras claves en el texto 
 def _has_any(text: str, keywords: list[str]) -> bool:
     return any(keyword in text for keyword in keywords)
 
@@ -158,7 +157,7 @@ def _is_enabled(value: str | None) -> bool:
         return False
     return value.strip().lower() in {"1", "true", "yes", "si", "on"}
 
-
+# Valida el audio y imagen para que no se lentee, de manera local o en internet
 def _download_binary(url: str, *, max_bytes: int, timeout_seconds: int) -> bytes | None:
     # Descarga contenido remoto con limite de tamanio para proteger el backend.
     local_path = resolve_local_evidence_path_from_url(url)
@@ -184,144 +183,15 @@ def _download_binary(url: str, *, max_bytes: int, timeout_seconds: int) -> bytes
 
 
 @lru_cache(maxsize=1)
-def _get_whisper_model():
-    # Lazy-load del modelo para evitar costo al iniciar la API.
-    from faster_whisper import WhisperModel
-
-    model_name = os.getenv("AI_WHISPER_MODEL", "small")
-    compute_type = os.getenv("AI_WHISPER_COMPUTE_TYPE", "int8")
-    device = os.getenv("AI_WHISPER_DEVICE", "cpu")
-    return WhisperModel(model_name, device=device, compute_type=compute_type)
-
-
-@lru_cache(maxsize=1)
 def _get_vosk_model(model_path: str):
-    # Lazy-load de Vosk para transcripcion local/offline.
+    # Lazy-load de Vosk para transcripcion 
     from vosk import Model
 
     return Model(model_path)
 
 
-def _transcribe_audio_with_whisper_api(*, audio_url: str, audio_bytes: bytes) -> str | None:
-    # Transcribe audio usando endpoint de Whisper API (OpenAI compatible).
-    api_key = os.getenv("AI_WHISPER_API_KEY")
-    if not api_key:
-        logger.info("[IA] AI_WHISPER_API_KEY no configurada; transcripcion API omitida.")
-        return None
-
-    endpoint = os.getenv("AI_WHISPER_API_URL", "https://api.openai.com/v1/audio/transcriptions")
-    model = os.getenv("AI_WHISPER_API_MODEL", "whisper-1")
-    language = (os.getenv("AI_WHISPER_API_LANGUAGE") or "").strip()
-    prompt = (os.getenv("AI_WHISPER_API_PROMPT") or "").strip()
-
-    timeout_raw = os.getenv("AI_WHISPER_API_TIMEOUT_SECONDS", "60")
-    try:
-        timeout_seconds = int(timeout_raw)
-    except ValueError:
-        timeout_seconds = 60
-
-    retries_raw = os.getenv("AI_WHISPER_API_MAX_RETRIES", "2")
-    backoff_raw = os.getenv("AI_WHISPER_API_RETRY_BACKOFF_SECONDS", "2")
-    try:
-        max_retries = max(0, int(retries_raw))
-    except ValueError:
-        max_retries = 2
-    try:
-        backoff_seconds = float(backoff_raw)
-    except ValueError:
-        backoff_seconds = 2.0
-
-    suffix = Path(audio_url).suffix or ".audio"
-    files = {
-        "file": (f"audio{suffix}", audio_bytes, "application/octet-stream"),
-    }
-    form_data: dict[str, str] = {
-        "model": model,
-        "response_format": "text",
-    }
-    if language:
-        form_data["language"] = language
-    if prompt:
-        form_data["prompt"] = prompt
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-    }
-
-    attempt = 0
-    while attempt <= max_retries:
-        attempt += 1
-        try:
-            with httpx.Client(timeout=timeout_seconds) as client:
-                response = client.post(endpoint, headers=headers, files=files, data=form_data)
-                response.raise_for_status()
-
-            content_type = (response.headers.get("content-type") or "").lower()
-            if "application/json" in content_type:
-                payload = response.json()
-                if isinstance(payload, dict):
-                    text = str(payload.get("text") or "").strip()
-                    return text if text else None
-
-            text = response.text.strip()
-            return text if text else None
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            if status_code == 429 and attempt <= max_retries:
-                retry_after_raw = exc.response.headers.get("Retry-After")
-                wait_seconds = backoff_seconds * attempt
-                if retry_after_raw:
-                    try:
-                        wait_seconds = max(wait_seconds, float(retry_after_raw))
-                    except ValueError:
-                        pass
-                logger.warning(
-                    "[IA] Whisper API con limite (429). Reintento %s/%s en %.1fs.",
-                    attempt,
-                    max_retries,
-                    wait_seconds,
-                )
-                time.sleep(wait_seconds)
-                continue
-
-            if status_code == 429:
-                logger.warning(
-                    "[IA] Whisper API devolvio 429 tras reintentos. Revisa cuota, facturacion o baja frecuencia de solicitudes."
-                )
-            else:
-                logger.warning("[IA] Whisper API devolvio estado %s.", status_code)
-            return None
-        except Exception as exc:
-            logger.warning("[IA] No se pudo transcribir audio con Whisper API: %s", exc)
-            return None
-
-    return None
-
-
-def _transcribe_audio_with_whisper_local(*, audio_url: str, audio_bytes: bytes) -> str | None:
-    # Transcribe audio con faster-whisper en modo local.
-    try:
-        suffix = Path(audio_url).suffix or ".audio"
-        with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_path = tmp_file.name
-
-        try:
-            model = _get_whisper_model()
-            segments, _ = model.transcribe(tmp_path, beam_size=1, vad_filter=True)
-            text = " ".join(segment.text.strip() for segment in segments if segment.text)
-            cleaned = text.strip()
-            return cleaned if cleaned else None
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-    except Exception as exc:
-        logger.warning("[IA] No se pudo transcribir audio con Whisper local: %s", exc)
-        return None
-
-
 def _transcribe_audio_with_vosk(*, audio_url: str, audio_bytes: bytes) -> str | None:
-    # Transcribe audio con Vosk en modo local/offline.
+    # Transcribe audio con Vosk 
     model_path = (os.getenv("AI_VOSK_MODEL_PATH") or "").strip()
     if not model_path:
         logger.info("[IA] AI_VOSK_MODEL_PATH no configurado; transcripcion Vosk omitida.")
@@ -403,11 +273,11 @@ def _transcribe_audio_with_vosk(*, audio_url: str, audio_bytes: bytes) -> str | 
         return None
 
 
-def _transcribe_audio_with_whisper(audio_url: str | None) -> str | None:
-    # Transcribe audio usando proveedor configurable (vosk/api/local).
+def _transcribe_audio(audio_url: str | None) -> str | None:
+    # Transcribe audio usando un unico proveedor soportado: Vosk.
     transcription_enabled_flag = os.getenv(
         "AI_ENABLE_AUDIO_TRANSCRIPTION",
-        os.getenv("AI_ENABLE_WHISPER"),
+        "true",
     )
     if not audio_url:
         return None
@@ -424,20 +294,16 @@ def _transcribe_audio_with_whisper(audio_url: str | None) -> str | None:
         if not audio_bytes:
             return None
 
-        provider = (
-            os.getenv("AI_TRANSCRIPTION_PROVIDER", os.getenv("AI_WHISPER_PROVIDER", "vosk"))
-            or "vosk"
-        ).strip().lower()
+        # Se conserva la variable para no romper entorno existente,
+        # pero el modulo solo soporta Vosk.
+        provider = (os.getenv("AI_TRANSCRIPTION_PROVIDER") or "vosk").strip().lower()
+        if provider != "vosk":
+            logger.warning(
+                "[IA] AI_TRANSCRIPTION_PROVIDER=%s no soportado en este modulo. Se usara Vosk.",
+                provider,
+            )
 
-        if provider == "vosk":
-            return _transcribe_audio_with_vosk(audio_url=audio_url, audio_bytes=audio_bytes)
-        if provider == "api":
-            return _transcribe_audio_with_whisper_api(audio_url=audio_url, audio_bytes=audio_bytes)
-        if provider == "local":
-            return _transcribe_audio_with_whisper_local(audio_url=audio_url, audio_bytes=audio_bytes)
-
-        logger.warning("[IA] proveedor de transcripcion invalido (%s). Usa 'vosk', 'api' o 'local'.", provider)
-        return None
+        return _transcribe_audio_with_vosk(audio_url=audio_url, audio_bytes=audio_bytes)
     except Exception as exc:
         logger.warning("[IA] No se pudo transcribir audio: %s", exc)
         return None
@@ -759,7 +625,8 @@ def process_incident_payload_for_ai(
     user_text: str | None,
 ) -> AIIncidentProcessingResult:
     # Orquesta el pipeline IA sin bloquear el alta del incidente en caso de fallas.
-    audio_transcription = _transcribe_audio_with_whisper(audio_url)
+    # Flujo: transcripcion (Vosk) -> analisis de imagen (HF) -> inferencias heuristicas.
+    audio_transcription = _transcribe_audio(audio_url)
     image_summary = _analyze_image_with_hf(image_url)
     logger.info("[IA] Audio transcripcion: %s", audio_transcription)
     logger.info("[IA] Imagen resumen: %s", image_summary)

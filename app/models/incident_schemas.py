@@ -112,9 +112,16 @@ class WorkshopCandidateItem(BaseModel):
     taller_id: int
     nombre_taller: str
     disponibilidad: str
+    taller_activo: bool
     capacidad_disponible: bool
+    tecnicos_disponibles: int = 0
+    transportes_disponibles: int = 0
+    cumple_servicio: bool
     cumple_tipo_problema: bool
+    distancia_metros: float | None
     distancia_km: float | None
+    recomendado: bool
+    categoria_recomendacion: str
     puntuacion: float
     servicios: list[str]
     razon: str
@@ -197,6 +204,7 @@ class WorkshopEvidenceItem(BaseModel):
     evidencia_id: int
     tipo: str
     url: str | None
+    url_audio: str | None = None
     texto_extraido: str | None
 
 

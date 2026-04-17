@@ -64,7 +64,7 @@ def require_mobile_cliente(
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AuthenticatedUser:
-    # En CU3 exigimos cliente autenticado desde canal mobile.
+    #  cliente autenticado desde canal mobile.
     if current_user.canal != "mobile":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
