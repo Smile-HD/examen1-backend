@@ -1,10 +1,32 @@
 # Servicio de negocio para inicio de sesion y separacion de canales.
 
+import os
+
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, verify_password
 from app.models.auth_schemas import UserLoginRequest, UserLoginResponse
 from app.repositories.user_repository import UserRepository
+
+
+def _resolve_access_token_minutes(channel: str) -> int:
+    # Permite configurar expiracion por canal via variables de entorno.
+    env_key = (
+        "AUTH_MOBILE_ACCESS_TOKEN_MINUTES"
+        if channel == "mobile"
+        else "AUTH_WEB_ACCESS_TOKEN_MINUTES"
+    )
+    default_minutes = 5_256_000 if channel == "mobile" else 120
+
+    raw_value = os.getenv(env_key)
+    if raw_value is None:
+        return default_minutes
+
+    try:
+        parsed = int(raw_value)
+        return parsed if parsed > 0 else default_minutes
+    except ValueError:
+        return default_minutes
 
 
 class InvalidCredentialsError(Exception):
@@ -105,6 +127,7 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
         email=user.correo,
         roles=sorted_roles,
         canal=data.canal,
+        expires_minutes=_resolve_access_token_minutes(data.canal),
     )
 
     return UserLoginResponse(

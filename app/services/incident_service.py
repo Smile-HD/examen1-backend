@@ -1131,6 +1131,8 @@ def finalize_workshop_service(
     data: WorkshopServiceCompletionRequest,
     *,
     taller_id: int,
+    actor_tipo: str = "taller",
+    actor_id: int | None = None,
     db: Session,
 ) -> WorkshopServiceCompletionResponse:
     # Cierra atencion de solicitud aceptada y libera tecnico/transporte.
@@ -1173,6 +1175,8 @@ def finalize_workshop_service(
     total_cost = float(data.costo_total or 0)
     workshop_commission = round(total_cost * 0.10, 2)
     distance_km = float(data.distancia_km) if data.distancia_km is not None else None
+    resolved_actor_id = actor_id if actor_id is not None else taller_id
+    normalized_actor = actor_tipo.strip().lower() if actor_tipo else "taller"
 
     try:
         if technician_id:
@@ -1206,10 +1210,10 @@ def finalize_workshop_service(
             cliente_id=incident.cliente_id,
             accion="servicio_finalizado",
             descripcion=(
-                f"Taller {taller_id} finalizo solicitud {request.id}. "
+                f"{normalized_actor.capitalize()} {resolved_actor_id} finalizo solicitud {request.id}. "
                 f"Recursos liberados: tecnico={technician_id}, transporte={transport_id}."
             ),
-            actor_usuario_id=taller_id,
+            actor_usuario_id=resolved_actor_id,
         )
 
         metric = repository.upsert_metric(
@@ -1234,7 +1238,7 @@ def finalize_workshop_service(
                 f"Metrica registrada: tiempo={duration_minutes}m, "
                 f"costo={total_cost}, comision={workshop_commission}."
             ),
-            actor_usuario_id=taller_id,
+            actor_usuario_id=resolved_actor_id,
         )
 
         db.commit()
@@ -1247,16 +1251,25 @@ def finalize_workshop_service(
         db.rollback()
         raise
 
+    if normalized_actor == "tecnico":
+        titulo = "Servicio finalizado por técnico"
+        evento = "solicitud_finalizada_tecnico"
+    else:
+        titulo = "Servicio finalizado"
+        evento = "servicio_finalizado"
+
     send_client_push_best_effort(
         cliente_id=incident.cliente_id,
-        titulo="Servicio finalizado",
+        titulo=titulo,
         cuerpo="Tu asistencia fue finalizada. Ya puedes revisar las métricas del servicio.",
         data={
-            "evento": "servicio_finalizado",
+            "evento": evento,
             "solicitud_id": str(request.id),
             "incidente_id": str(incident.id),
             "estado_solicitud": str(request.estado),
             "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+            "actor_tipo": normalized_actor,
+            "actor_id": str(resolved_actor_id),
         },
         db=db,
     )
@@ -1300,6 +1313,8 @@ def finalize_service_by_technician(
         solicitud_id,
         data,
         taller_id=request.taller_id,
+        actor_tipo="tecnico",
+        actor_id=tecnico_id,
         db=db,
     )
 
@@ -1398,13 +1413,19 @@ def reject_service_by_technician(
     send_client_push_best_effort(
         cliente_id=incident.cliente_id,
         titulo="Solicitud rechazada por técnico",
-        cuerpo="El técnico rechazó tu solicitud. Te notificaremos cuando se reasigne una nueva atención.",
+        cuerpo=(
+            "El técnico rechazó tu solicitud. "
+            f"Motivo: {data.comentario.strip()}"
+            if (data.comentario or "").strip()
+            else "El técnico rechazó tu solicitud. Te notificaremos cuando se reasigne una nueva atención."
+        ),
         data={
             "evento": "solicitud_rechazada_tecnico",
             "solicitud_id": str(request.id),
             "incidente_id": str(incident.id),
             "estado_solicitud": str(request.estado),
             "estado_incidente": repository.get_service_state_name(incident.estado_servicio_id),
+            "motivo": (data.comentario or "").strip(),
         },
         db=db,
     )
