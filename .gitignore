@@ -18,7 +18,7 @@ htmlcov/
 # IDE / editor
 .vscode/
 .idea/
-
+contexto.md
 # Bases locales temporales
 *.sqlite
 *.sqlite3
