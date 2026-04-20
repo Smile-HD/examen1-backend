@@ -25,6 +25,7 @@ htmlcov/
 
 # Artefactos locales pesados
 /tools/
+/docs/
 /models/
 /uploads/
 *.zip
