@@ -200,3 +200,26 @@ def update_workshop_profile_controller(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidWorkshopServiceSelectionError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def upload_workshop_qr_controller(
+    *,
+    taller_id: int,
+    file_bytes: bytes,
+    original_file_name: str | None,
+    content_type: str | None,
+    base_url: str,
+    db: Session,
+) -> dict:
+    from app.services.workshop_service import upload_workshop_qr
+    try:
+        return upload_workshop_qr(
+            taller_id=taller_id,
+            file_bytes=file_bytes,
+            original_file_name=original_file_name,
+            content_type=content_type,
+            base_url=base_url,
+            db=db,
+        )
+    except WorkshopProfileNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

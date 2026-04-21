@@ -44,6 +44,7 @@ CREATE TABLE cliente (
 CREATE TABLE taller (
     id INT PRIMARY KEY,
     nombre VARCHAR(150) NOT NULL,
+    qr_image_url TEXT,
     ubicacion TEXT,
     latitud NUMERIC(9,6),
     longitud NUMERIC(9,6),

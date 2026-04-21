@@ -1,6 +1,6 @@
 # Rutas de API para gestion operativa del taller (tecnicos y unidades).
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.controllers.workshop_controller import (
@@ -16,6 +16,7 @@ from app.controllers.workshop_controller import (
     unassign_technician_from_workshop_controller,
     update_workshop_profile_controller,
     update_workshop_vehicle_controller,
+    upload_workshop_qr_controller,
 )
 from app.database import get_db
 from app.dependencies.auth import AuthenticatedUser, require_web_taller
@@ -223,3 +224,30 @@ def list_workshop_technician_locations_endpoint(
 ) -> list[WorkshopTechnicianLocationItem]:
     # Devuelve ubicacion en tiempo real reportada por tecnicos del taller.
     return list_workshop_technician_locations_controller(taller_id=current_user.user_id, db=db)
+
+
+@router.post(
+    "/qr-upload",
+    status_code=status.HTTP_200_OK,
+)
+async def upload_workshop_qr_endpoint(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: AuthenticatedUser = Depends(require_web_taller),
+    db: Session = Depends(get_db),
+) -> dict:
+    content = await file.read()
+    max_size_bytes = 10 * 1024 * 1024
+    if len(content) > max_size_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="La imagen QR supera el limite permitido (10 MB).",
+        )
+    return upload_workshop_qr_controller(
+        taller_id=current_user.user_id,
+        file_bytes=content,
+        original_file_name=file.filename,
+        content_type=file.content_type,
+        base_url=str(request.base_url).rstrip("/"),
+        db=db,
+    )

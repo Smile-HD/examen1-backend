@@ -27,6 +27,7 @@ if config.config_file_name is not None:
 from app.models.base import Base
 from app.models.user import Usuario, Cliente, Taller, Tecnico, Rol, RolUsuario, Transporte, Servicio, TallerServicio, UsuarioPushToken
 from app.models.incident import Incidente
+from app.models.payment import Payment
 from app.models.vehicle import Vehiculo
 
 # add your model's MetaData object here

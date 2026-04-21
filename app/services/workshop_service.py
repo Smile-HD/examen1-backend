@@ -200,6 +200,7 @@ def get_workshop_profile(
     return WorkshopProfileResponse(
         taller_id=workshop.id,
         nombre_taller=workshop.nombre,
+        qr_image_url=workshop.qr_image_url,
         ubicacion_texto=location_text,
         latitud=latitud,
         longitud=longitud,
@@ -235,7 +236,9 @@ def update_workshop_profile(
     ]
 
     previous_name = workshop.nombre
+    previous_qr_image_url = workshop.qr_image_url
     previous_location = workshop.ubicacion
+    new_qr_image_url = payload.qr_image_url if payload.qr_image_url is not None else workshop.qr_image_url
 
     latitud = float(payload.latitud) if payload.latitud is not None else None
     longitud = float(payload.longitud) if payload.longitud is not None else None
@@ -254,6 +257,7 @@ def update_workshop_profile(
         repository.update_workshop_profile(
             workshop,
             nombre=payload.nombre_taller,
+            qr_image_url=new_qr_image_url,
             ubicacion=new_location,
             latitud=latitud,
             longitud=longitud,
@@ -273,6 +277,7 @@ def update_workshop_profile(
             accion="perfil_taller_actualizado",
             descripcion=(
                 f"Perfil actualizado: nombre '{previous_name}' -> '{payload.nombre_taller}', "
+                f"qr '{previous_qr_image_url or '-'}' -> '{new_qr_image_url or '-'}', "
                 f"ubicacion '{previous_location or '-'}' -> '{new_location or '-'}', "
                 f"servicios={len(requested_ids)}."
             ),
@@ -623,3 +628,53 @@ def list_workshop_technician_locations(
             )
             
     return result
+
+
+def upload_workshop_qr(
+    *,
+    taller_id: int,
+    file_bytes: bytes,
+    original_file_name: str | None,
+    content_type: str | None,
+    base_url: str,
+    db: Session,
+) -> dict:
+    from uuid import uuid4
+    from app.core.payment_storage import (
+        resolve_payment_qr_directory,
+        safe_proof_file_extension,
+    )
+
+    repository = WorkshopRepository(db)
+    workshop = repository.get_workshop_by_id(taller_id)
+    if not workshop:
+        raise WorkshopProfileNotFoundError("Perfil de taller no encontrado.")
+
+    if not file_bytes:
+        raise ValueError("La imagen QR esta vacia.")
+
+    extension = safe_proof_file_extension(original_file_name, content_type)
+    qr_file_name = f"workshop_qr_{taller_id}_{uuid4().hex}{extension}"
+    qr_dir = resolve_payment_qr_directory()
+    target_path = qr_dir / qr_file_name
+    with target_path.open("wb") as f:
+        f.write(file_bytes)
+
+    qr_relative_url = f"/payments/qr/{qr_file_name}"
+    qr_absolute_url = f"{base_url.rstrip('/')}{qr_relative_url}"
+
+    try:
+        workshop.qr_image_url = qr_relative_url
+        db.commit()
+        db.refresh(workshop)
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "taller_id": taller_id,
+        "qr_image_url": qr_relative_url,
+        "qr_image_url_absolute": qr_absolute_url,
+        "message": "Imagen QR del taller actualizada correctamente.",
+    }
+

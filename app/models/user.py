@@ -67,6 +67,7 @@ class Taller(Base):
         Integer, ForeignKey("usuario.id", ondelete="CASCADE"), primary_key=True
     )
     nombre: Mapped[str] = mapped_column(String(150), nullable=False)
+    qr_image_url: Mapped[str] = mapped_column(Text, nullable=True)
     ubicacion: Mapped[str] = mapped_column(Text, nullable=True)
     latitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)
     longitud: Mapped[float] = mapped_column(Numeric(9, 6), nullable=True)

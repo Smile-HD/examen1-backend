@@ -139,6 +139,7 @@ class WorkshopProfileResponse(BaseModel):
 
     taller_id: int
     nombre_taller: str
+    qr_image_url: str | None
     ubicacion_texto: str | None
     latitud: float | None
     longitud: float | None
@@ -150,12 +151,13 @@ class WorkshopProfileUpdateRequest(BaseModel):
     # Payload para actualizar perfil y servicios del taller.
 
     nombre_taller: str = Field(min_length=3, max_length=150)
+    qr_image_url: str | None = Field(default=None, max_length=2000)
     ubicacion_texto: str | None = Field(default=None, max_length=500)
     latitud: float | None = Field(default=None, ge=-90, le=90)
     longitud: float | None = Field(default=None, ge=-180, le=180)
     servicios_ofrecidos_ids: list[int] = Field(default_factory=list)
 
-    @field_validator("nombre_taller", "ubicacion_texto")
+    @field_validator("nombre_taller", "ubicacion_texto", "qr_image_url")
     @classmethod
     def normalize_profile_text(cls, value: str | None) -> str | None:
         if value is None:

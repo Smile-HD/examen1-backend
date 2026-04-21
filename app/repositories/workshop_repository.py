@@ -97,12 +97,14 @@ class WorkshopRepository:
         workshop: Taller,
         *,
         nombre: str,
+        qr_image_url: str | None,
         ubicacion: str | None,
         latitud: float | None,
         longitud: float | None,
     ) -> Taller:
         # Actualiza nombre y ubicacion textual del taller.
         workshop.nombre = nombre
+        workshop.qr_image_url = qr_image_url
         workshop.ubicacion = ubicacion
         workshop.latitud = latitud
         workshop.longitud = longitud
