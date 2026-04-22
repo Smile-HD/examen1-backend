@@ -1,6 +1,7 @@
 from uuid import uuid4
 import json
 from datetime import datetime, timezone
+import logging
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -32,6 +33,8 @@ PAYMENT_STATUS_PENDING = "pendiente"
 PAYMENT_STATUS_VERIFICATION = "verificacion"
 PAYMENT_STATUS_CONFIRMED = "confirmado"
 PAYMENT_STATUS_REJECTED = "rechazado"
+
+logger = logging.getLogger(__name__)
 
 
 class IncidentNotOwnedError(Exception):
@@ -454,8 +457,16 @@ def list_admin_payment_summary(
     base_url: str,
     db: Session,
 ) -> PaymentAdminSummaryResponse:
+    start_ts = datetime.now(timezone.utc)
     repository = PaymentRepository(db)
+    logger.info("list_admin_payment_summary: inicio de petición admin summary")
     payments = repository.list_all_payments()
+    mid_ts = datetime.now(timezone.utc)
+    logger.info(
+        "list_admin_payment_summary: cargados %d pagos en %s",
+        len(payments),
+        str(mid_ts - start_ts),
+    )
 
     user_ids = {int(payment.user_id) for payment in payments}
     workshop_ids = {int(payment.taller_id) for payment in payments}
