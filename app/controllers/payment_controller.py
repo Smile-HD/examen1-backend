@@ -2,11 +2,14 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.payment_schemas import (
+    PaymentAdminSummaryResponse,
     PaymentConfirmRequest,
     PaymentConfirmResponse,
     PaymentCreateRequest,
     PaymentCreateResponse,
     PaymentListResponse,
+    PaymentRejectRequest,
+    PaymentRejectResponse,
     PaymentUploadProofResponse,
 )
 from app.services.payment_service import (
@@ -19,7 +22,9 @@ from app.services.payment_service import (
     WorkshopQrNotConfiguredError,
     confirm_payment,
     create_payment,
+    list_admin_payment_summary,
     list_workshop_payments,
+    reject_payment,
     upload_payment_proof,
 )
 
@@ -85,6 +90,22 @@ def confirm_payment_controller(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+def reject_payment_controller(
+    payload: PaymentRejectRequest,
+    *,
+    taller_id: int,
+    db: Session,
+) -> PaymentRejectResponse:
+    try:
+        return reject_payment(payload, taller_id=taller_id, db=db)
+    except PaymentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except IncidentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidPaymentStateError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 def list_workshop_payments_controller(
     *,
     taller_id: int,
@@ -92,3 +113,11 @@ def list_workshop_payments_controller(
     db: Session,
 ) -> PaymentListResponse:
     return list_workshop_payments(taller_id=taller_id, base_url=base_url, db=db)
+
+
+def list_admin_payment_summary_controller(
+    *,
+    base_url: str,
+    db: Session,
+) -> PaymentAdminSummaryResponse:
+    return list_admin_payment_summary(base_url=base_url, db=db)

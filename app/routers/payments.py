@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app.controllers.payment_controller import (
     confirm_payment_controller,
     create_payment_controller,
+    list_admin_payment_summary_controller,
     list_workshop_payments_controller,
+    reject_payment_controller,
     upload_payment_proof_controller,
 )
 from app.core.payment_storage import (
@@ -15,13 +17,21 @@ from app.core.payment_storage import (
     resolve_payment_qr_directory,
 )
 from app.database import get_db
-from app.dependencies.auth import AuthenticatedUser, require_mobile_cliente, require_web_taller
+from app.dependencies.auth import (
+    AuthenticatedUser,
+    require_mobile_cliente,
+    require_web_superuser,
+    require_web_taller,
+)
 from app.models.payment_schemas import PaymentListResponse
 from app.models.payment_schemas import (
+    PaymentAdminSummaryResponse,
     PaymentConfirmRequest,
     PaymentConfirmResponse,
     PaymentCreateRequest,
     PaymentCreateResponse,
+    PaymentRejectRequest,
+    PaymentRejectResponse,
     PaymentUploadProofResponse,
 )
 
@@ -94,6 +104,19 @@ def confirm_payment_endpoint(
     return confirm_payment_controller(payload, taller_id=current_user.user_id, db=db)
 
 
+@router.post(
+    "/reject",
+    response_model=PaymentRejectResponse,
+    status_code=status.HTTP_200_OK,
+)
+def reject_payment_endpoint(
+    payload: PaymentRejectRequest,
+    current_user: AuthenticatedUser = Depends(require_web_taller),
+    db: Session = Depends(get_db),
+) -> PaymentRejectResponse:
+    return reject_payment_controller(payload, taller_id=current_user.user_id, db=db)
+
+
 @router.get(
     "/workshop",
     response_model=PaymentListResponse,
@@ -106,6 +129,23 @@ def list_workshop_payments_endpoint(
 ) -> PaymentListResponse:
     return list_workshop_payments_controller(
         taller_id=current_user.user_id,
+        base_url=str(request.base_url).rstrip("/"),
+        db=db,
+    )
+
+
+@router.get(
+    "/admin/summary",
+    response_model=PaymentAdminSummaryResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_admin_payment_summary_endpoint(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_web_superuser),
+    db: Session = Depends(get_db),
+) -> PaymentAdminSummaryResponse:
+    _ = current_user
+    return list_admin_payment_summary_controller(
         base_url=str(request.base_url).rstrip("/"),
         db=db,
     )

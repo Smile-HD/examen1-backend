@@ -60,14 +60,39 @@ class PaymentConfirmResponse(BaseModel):
     message: str
 
 
+class PaymentRejectRequest(BaseModel):
+    payment_id: int = Field(gt=0)
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_optional_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
+class PaymentRejectResponse(BaseModel):
+    payment_id: int
+    incident_id: int
+    status: str
+    incident_status: str
+    message: str
+
+
 class PaymentListItemResponse(BaseModel):
     payment_id: int
     incident_id: int
     user_id: int
+    user_name: str | None
     taller_id: int
+    taller_name: str | None
     amount: float
     commission: float
+    net_amount_to_workshop: float
     status: str
+    reference: str
     proof_image_url: str | None
     proof_image_url_absolute: str | None
     created_at: datetime
@@ -75,4 +100,32 @@ class PaymentListItemResponse(BaseModel):
 
 class PaymentListResponse(BaseModel):
     total: int
+    payments: list[PaymentListItemResponse]
+
+
+class PaymentWorkshopSummaryItemResponse(BaseModel):
+    taller_id: int
+    taller_name: str
+    total_payments: int
+    confirmed_payments: int
+    pending_payments: int
+    verification_payments: int
+    rejected_payments: int
+    total_amount: float
+    total_commission: float
+    total_net_to_workshop: float
+    amount_due_to_platform: float
+
+
+class PaymentAdminSummaryResponse(BaseModel):
+    generated_at: datetime
+    total_payments: int
+    confirmed_payments: int
+    pending_payments: int
+    verification_payments: int
+    rejected_payments: int
+    total_amount: float
+    total_commission: float
+    total_net_to_workshop: float
+    workshops: list[PaymentWorkshopSummaryItemResponse]
     payments: list[PaymentListItemResponse]

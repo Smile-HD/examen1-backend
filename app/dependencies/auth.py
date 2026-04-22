@@ -12,6 +12,8 @@ from app.repositories.user_repository import UserRepository
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+SUPERUSER_ROLE_ALIASES = {"superusuario", "superuser", "admin", "administrador"}
+
 
 @dataclass
 class AuthenticatedUser:
@@ -141,6 +143,26 @@ def require_mobile_tecnico(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo tecnicos pueden ejecutar esta operacion.",
+        )
+
+    return current_user
+
+
+def require_web_superuser(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> AuthenticatedUser:
+    # Exige acceso web de superusuario/administrador para panel global.
+    if current_user.canal != "web":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este endpoint es solo para canal web.",
+        )
+
+    normalized_roles = {role.strip().lower() for role in current_user.roles}
+    if not normalized_roles.intersection(SUPERUSER_ROLE_ALIASES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo superusuarios pueden ejecutar esta operacion.",
         )
 
     return current_user

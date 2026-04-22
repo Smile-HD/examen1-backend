@@ -8,6 +8,8 @@ from app.core.security import create_access_token, verify_password
 from app.models.auth_schemas import UserLoginRequest, UserLoginResponse
 from app.repositories.user_repository import UserRepository
 
+SUPERUSER_ROLE_ALIASES = {"superusuario", "superuser", "admin", "administrador"}
+
 
 def _resolve_access_token_minutes(channel: str) -> int:
     # Permite configurar expiracion por canal via variables de entorno.
@@ -69,6 +71,8 @@ def _resolve_primary_profile(
 ) -> str:
     # En mobile priorizamos tecnico sobre cliente; en web siempre prioriza taller.
     if channel == "web":
+        if effective_roles.intersection(SUPERUSER_ROLE_ALIASES):
+            return "superusuario"
         if specialization_flags.get("taller") or "taller" in effective_roles:
             return "taller"
         if "tecnico" in effective_roles:
@@ -108,9 +112,10 @@ def authenticate_user(data: UserLoginRequest, db: Session) -> UserLoginResponse:
         raise ChannelAccessDeniedError(
             "Este usuario no tiene acceso al canal mobile."
         )
-    if data.canal == "web" and "taller" not in effective_roles:
+    is_superuser = bool(effective_roles.intersection(SUPERUSER_ROLE_ALIASES))
+    if data.canal == "web" and "taller" not in effective_roles and not is_superuser:
         raise ChannelAccessDeniedError(
-            "Este usuario no tiene acceso al canal web de talleres."
+            "Este usuario no tiene acceso al canal web."
         )
 
     # Nota de negocio: un tecnico inicia como cliente y luego puede sumar rol tecnico.

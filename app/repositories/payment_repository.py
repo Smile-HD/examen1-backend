@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.models.incident import EstadoServicio, Historial, Incidente
 from app.models.payment import Payment
-from app.models.user import Taller
+from app.models.user import Taller, Usuario
 
 
 class PaymentRepository:
@@ -57,6 +57,19 @@ class PaymentRepository:
             .order_by(Payment.created_at.desc())
             .all()
         )
+
+    def list_all_payments(self) -> list[Payment]:
+        return self.db.query(Payment).order_by(Payment.created_at.desc()).all()
+
+    def list_users_by_ids(self, user_ids: set[int]) -> list[Usuario]:
+        if not user_ids:
+            return []
+        return self.db.query(Usuario).filter(Usuario.id.in_(user_ids)).all()
+
+    def list_workshops_by_ids(self, workshop_ids: set[int]) -> list[Taller]:
+        if not workshop_ids:
+            return []
+        return self.db.query(Taller).filter(Taller.id.in_(workshop_ids)).all()
 
     def create_payment(
         self,
