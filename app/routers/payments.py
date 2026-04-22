@@ -35,7 +35,7 @@ from app.models.payment_schemas import (
     PaymentUploadProofResponse,
 )
 
-router = APIRouter(prefix="/payments", tags=["Payments"])
+router = APIRouter(prefix="/api/v1/payments", tags=["Payments"])
 
 
 @router.post(

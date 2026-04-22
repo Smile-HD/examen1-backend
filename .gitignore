@@ -9,7 +9,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
-
+seed_superuser.py
 # Entorno local
 .env
 .env.*
