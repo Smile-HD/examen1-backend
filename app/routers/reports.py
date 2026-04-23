@@ -8,7 +8,7 @@ from app.dependencies.auth import require_web_superuser, AuthenticatedUser
 from app.database import get_db
 from app.services.Admin.report_service import AdminReportService
 
-router = APIRouter(prefix="/reports", tags=["Reports"])
+router = APIRouter(prefix="/api/v1/reports", tags=["Reports"])
 
 
 def parse_date_range(
