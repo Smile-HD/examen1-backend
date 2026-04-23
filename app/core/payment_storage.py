@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 from urllib.parse import urlparse
 
-PAYMENT_ROUTE_PREFIX = "/payments"
-PAYMENT_PROOF_ROUTE_PREFIX = "/payments/proofs/"
-PAYMENT_QR_ROUTE_PREFIX = "/payments/qr/"
+PAYMENT_ROUTE_PREFIX = "/api/v1/payments"
+PAYMENT_PROOF_ROUTE_PREFIX = "/api/v1/payments/proofs/"
+PAYMENT_QR_ROUTE_PREFIX = "/api/v1/payments/qr/"
 
 ALLOWED_PROOF_EXTENSIONS: set[str] = {".jpg", ".jpeg", ".png", ".webp"}
 
