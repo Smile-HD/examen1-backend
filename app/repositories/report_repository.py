@@ -122,8 +122,8 @@ class ReportRepository:
             self.db.query(func.count(func.distinct(Incidente.taller_id)))
             .filter(
                 Incidente.taller_id.isnot(None),
-                Incidente.creado_en >= start_date,
-                Incidente.creado_en <= end_date,
+                Incidente.fecha_hora >= start_date,
+                Incidente.fecha_hora <= end_date,
             )
             .scalar()
         )
@@ -144,7 +144,7 @@ class ReportRepository:
         total_incidents = (
             self.db.query(Incidente)
             .filter(
-                Incidente.creado_en >= start_date, Incidente.creado_en <= end_date
+                Incidente.fecha_hora >= start_date, Incidente.fecha_hora <= end_date
             )
             .count()
         )
@@ -156,7 +156,7 @@ class ReportRepository:
             )
             .join(EstadoServicio, Incidente.estado_servicio_id == EstadoServicio.id)
             .filter(
-                Incidente.creado_en >= start_date, Incidente.creado_en <= end_date
+                Incidente.fecha_hora >= start_date, Incidente.fecha_hora <= end_date
             )
             .group_by(EstadoServicio.nombre)
             .all()
@@ -169,8 +169,8 @@ class ReportRepository:
             self.db.query(Incidente)
             .filter(
                 Incidente.taller_id.isnot(None),
-                Incidente.creado_en >= start_date,
-                Incidente.creado_en <= end_date,
+                Incidente.fecha_hora >= start_date,
+                Incidente.fecha_hora <= end_date,
             )
             .count()
         )
@@ -188,14 +188,14 @@ class ReportRepository:
         """Obtiene tendencia diaria de incidentes creados."""
         result = (
             self.db.query(
-                func.date(Incidente.creado_en).label("date"),
+                func.date(Incidente.fecha_hora).label("date"),
                 func.count(Incidente.id).label("count"),
             )
             .filter(
-                Incidente.creado_en >= start_date, Incidente.creado_en <= end_date
+                Incidente.fecha_hora >= start_date, Incidente.fecha_hora <= end_date
             )
-            .group_by(func.date(Incidente.creado_en))
-            .order_by(func.date(Incidente.creado_en))
+            .group_by(func.date(Incidente.fecha_hora))
+            .order_by(func.date(Incidente.fecha_hora))
             .all()
         )
 
@@ -288,7 +288,7 @@ class ReportRepository:
             .join(Cliente, Cliente.id == Usuario.id)
             .join(Incidente, Incidente.cliente_id == Cliente.id)
             .filter(
-                Incidente.creado_en >= start_date, Incidente.creado_en <= end_date
+                Incidente.fecha_hora >= start_date, Incidente.fecha_hora <= end_date
             )
             .group_by(Usuario.id, Usuario.nombre, Usuario.correo)
             .order_by(func.count(Incidente.id).desc())
