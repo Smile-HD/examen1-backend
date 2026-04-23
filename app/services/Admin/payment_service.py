@@ -89,11 +89,14 @@ def _build_payment_list_item(
     base_url: str,
     user_name: str | None,
     workshop_name: str | None,
+    workshop_qr_url: str | None = None,
 ) -> PaymentListItemResponse:
     amount = float(payment.amount)
     commission = float(payment.commission)
     proof_url = payment.proof_image_url
     proof_url_absolute = resolve_absolute_url(base_url, proof_url) if proof_url else None
+    
+    qr_url_absolute = resolve_absolute_url(base_url, workshop_qr_url) if workshop_qr_url else None
 
     return PaymentListItemResponse(
         payment_id=payment.id,
@@ -109,6 +112,8 @@ def _build_payment_list_item(
         reference=_build_payment_reference(incident_id=payment.incident_id, payment_id=payment.id),
         proof_image_url=proof_url,
         proof_image_url_absolute=proof_url_absolute,
+        qr_image_url=workshop_qr_url,
+        qr_image_url_absolute=qr_url_absolute,
         created_at=payment.created_at,
     )
 
@@ -451,12 +456,14 @@ def list_workshop_payments(
     for payment in payments:
         user = users_by_id.get(int(payment.user_id))
         workshop = workshops_by_id.get(int(payment.taller_id))
+        workshop_qr_url = workshop.qr_image_url if workshop else None
         items.append(
             _build_payment_list_item(
                 payment=payment,
                 base_url=base_url,
                 user_name=user.nombre if user else None,
                 workshop_name=workshop.nombre if workshop else None,
+                workshop_qr_url=workshop_qr_url,
             )
         )
 
@@ -482,12 +489,14 @@ def list_client_payments(
     for payment in payments:
         user = users_by_id.get(int(payment.user_id))
         workshop = workshops_by_id.get(int(payment.taller_id))
+        workshop_qr_url = workshop.qr_image_url if workshop else None
         items.append(
             _build_payment_list_item(
                 payment=payment,
                 base_url=base_url,
                 user_name=user.nombre if user else None,
                 workshop_name=workshop.nombre if workshop else None,
+                workshop_qr_url=workshop_qr_url,
             )
         )
 
@@ -530,12 +539,14 @@ def list_admin_payment_summary(
     for payment in payments:
         user = users_by_id.get(int(payment.user_id))
         workshop = workshops_by_id.get(int(payment.taller_id))
+        workshop_qr_url = workshop.qr_image_url if workshop else None
 
         item = _build_payment_list_item(
             payment=payment,
             base_url=base_url,
             user_name=user.nombre if user else None,
             workshop_name=workshop.nombre if workshop else None,
+            workshop_qr_url=workshop_qr_url,
         )
         payment_items.append(item)
 

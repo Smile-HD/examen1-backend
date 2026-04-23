@@ -95,6 +95,8 @@ class PaymentListItemResponse(BaseModel):
     reference: str
     proof_image_url: str | None
     proof_image_url_absolute: str | None
+    qr_image_url: str | None
+    qr_image_url_absolute: str | None
     created_at: datetime
 
 
