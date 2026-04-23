@@ -108,6 +108,7 @@ class PaymentListResponse(BaseModel):
 class PaymentWorkshopSummaryItemResponse(BaseModel):
     taller_id: int
     taller_name: str
+    taller_estado: str  # Estado del taller: activo/inactivo
     total_payments: int
     confirmed_payments: int
     pending_payments: int

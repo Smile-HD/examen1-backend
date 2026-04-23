@@ -575,6 +575,7 @@ def list_admin_payment_summary(
             workshop_accumulator[item.taller_id] = {
                 "taller_id": item.taller_id,
                 "taller_name": item.taller_name or f"Taller #{item.taller_id}",
+                "taller_estado": workshop.estado if workshop else "activo",  # Estado del taller
                 "total_payments": 0,
                 "confirmed_payments": 0,
                 "pending_payments": 0,
@@ -606,6 +607,7 @@ def list_admin_payment_summary(
         PaymentWorkshopSummaryItemResponse(
             taller_id=int(data["taller_id"]),
             taller_name=str(data["taller_name"]),
+            taller_estado=str(data["taller_estado"]),  # Incluir estado del taller
             total_payments=int(data["total_payments"]),
             confirmed_payments=int(data["confirmed_payments"]),
             pending_payments=int(data["pending_payments"]),
