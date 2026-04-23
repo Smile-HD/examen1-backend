@@ -197,3 +197,47 @@ def get_payment_qr_file_endpoint(file_name: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QR no encontrado.")
 
     return FileResponse(path=file_path)
+
+
+@router.put(
+    "/admin/workshop/{taller_id}/status",
+    status_code=status.HTTP_200_OK,
+)
+def update_workshop_status_endpoint(
+    taller_id: int,
+    estado: str,
+    current_user: AuthenticatedUser = Depends(require_web_superuser),
+    db: Session = Depends(get_db),
+):
+    """Actualiza el estado de un taller (activo/inactivo). Acceso solo para superusuarios."""
+    from app.repositories.workshop_repository import WorkshopRepository
+    
+    if estado not in ["activo", "inactivo"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estado inválido. Debe ser 'activo' o 'inactivo'."
+        )
+    
+    repository = WorkshopRepository(db)
+    workshop = repository.get_workshop_by_id(taller_id)
+    
+    if not workshop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Taller no encontrado."
+        )
+    
+    try:
+        repository.update_workshop_status(workshop, estado)
+        db.commit()
+        return {
+            "message": f"Taller {workshop.nombre} actualizado a estado '{estado}'.",
+            "taller_id": taller_id,
+            "estado": estado
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar estado del taller: {str(e)}"
+        )

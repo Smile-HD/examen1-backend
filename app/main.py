@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.auth import router as auth_router
+from app.routers.commissions import router as commissions_router
 from app.routers.health import router as health_router
 from app.routers.incidents import router as incidents_router
 from app.routers.payments import router as payments_router
@@ -26,5 +27,6 @@ app.include_router(users_router)
 app.include_router(vehicles_router)
 app.include_router(incidents_router)
 app.include_router(payments_router)
+app.include_router(commissions_router)
 app.include_router(push_notifications_router)
 app.include_router(workshop_router)

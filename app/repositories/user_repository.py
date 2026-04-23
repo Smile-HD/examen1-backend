@@ -158,3 +158,14 @@ class UserRepository:
             "taller": is_taller,
             "tecnico": is_tecnico,
         }
+
+    def delete_user(self, user_id: int) -> None:
+        # Elimina un usuario del sistema. Las relaciones en cascada se encargan de limpiar datos relacionados.
+        user = self.db.query(Usuario).filter(Usuario.id == user_id).first()
+        if user:
+            self.db.delete(user)
+            self.db.flush()
+
+    def get_user_by_id(self, user_id: int) -> Usuario | None:
+        # Obtiene un usuario por su ID.
+        return self.db.query(Usuario).filter(Usuario.id == user_id).first()

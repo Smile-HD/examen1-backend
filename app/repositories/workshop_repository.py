@@ -201,3 +201,9 @@ class WorkshopRepository:
         # Elimina unidad del taller.
         self.db.delete(vehicle)
         self.db.flush()
+
+    def update_workshop_status(self, workshop: Taller, estado: str) -> Taller:
+        # Actualiza el estado del taller (activo/inactivo).
+        workshop.estado = estado
+        self.db.flush()
+        return workshop
