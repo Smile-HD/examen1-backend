@@ -98,6 +98,14 @@ def _build_payment_list_item(
     
     qr_url_absolute = resolve_absolute_url(base_url, workshop_qr_url) if workshop_qr_url else None
 
+    # DEBUG: Log URLs being generated
+    logger.info(
+        f"Building payment list item {payment.id}: "
+        f"proof_url={proof_url}, proof_url_absolute={proof_url_absolute}, "
+        f"workshop_qr_url={workshop_qr_url}, qr_url_absolute={qr_url_absolute}, "
+        f"base_url={base_url}"
+    )
+
     return PaymentListItemResponse(
         payment_id=payment.id,
         incident_id=payment.incident_id,
