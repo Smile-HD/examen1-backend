@@ -53,25 +53,64 @@ class IncidentRepository:
         return self.db.query(Vehiculo).filter(Vehiculo.placa == placa).first()
 
     def list_client_requests(self, cliente_id: int) -> list[dict[str, object]]:
-        # Lista solicitudes de talleres para incidentes del cliente autenticado.
+        # Lista incidentes del cliente mostrando solo la solicitud más relevante por incidente.
+        # Prioridad: aceptada > en proceso > otras
+        
+        # Primero obtenemos todas las solicitudes
         rows = (
             self.db.query(Solicitud, Incidente, Taller)
             .join(Incidente, Incidente.id == Solicitud.incidente_id)
             .outerjoin(Taller, Taller.id == Solicitud.taller_id)
             .filter(Incidente.cliente_id == cliente_id)
-            .order_by(Solicitud.fecha_asignacion.desc())
+            .order_by(Incidente.id.desc(), Solicitud.fecha_asignacion.desc())
             .all()
         )
 
-        data: list[dict[str, object]] = []
+        # Agrupar por incidente_id y seleccionar la solicitud más relevante
+        incidents_map: dict[int, dict[str, object]] = {}
+        
         for solicitud, incidente, taller in rows:
-            data.append(
-                {
+            incidente_id = incidente.id
+            estado_solicitud = solicitud.estado.lower() if solicitud.estado else ""
+            
+            # Si ya tenemos este incidente, verificar si esta solicitud es más relevante
+            if incidente_id in incidents_map:
+                current_estado = incidents_map[incidente_id]["solicitud"].estado.lower() if incidents_map[incidente_id]["solicitud"].estado else ""
+                
+                # Prioridad de estados (mayor prioridad = más relevante para mostrar)
+                priority_map = {
+                    "aceptada": 10,
+                    "en_proceso": 9,
+                    "en_camino": 8,
+                    "enviada": 5,
+                    "pendiente": 4,
+                    "rechazada_tecnico": 2,
+                    "rechazada": 1,
+                    "otro_taller_acepto": 0,
+                }
+                
+                current_priority = priority_map.get(current_estado, 0)
+                new_priority = priority_map.get(estado_solicitud, 0)
+                
+                # Solo reemplazar si la nueva solicitud tiene mayor prioridad
+                if new_priority > current_priority:
+                    incidents_map[incidente_id] = {
+                        "solicitud": solicitud,
+                        "incidente": incidente,
+                        "taller_nombre": taller.nombre if taller else None,
+                    }
+            else:
+                # Primera vez que vemos este incidente
+                incidents_map[incidente_id] = {
                     "solicitud": solicitud,
                     "incidente": incidente,
                     "taller_nombre": taller.nombre if taller else None,
                 }
-            )
+        
+        # Convertir el mapa a lista ordenada por fecha (más reciente primero)
+        data = list(incidents_map.values())
+        data.sort(key=lambda x: x["incidente"].fecha_hora, reverse=True)
+        
         return data
 
     def get_or_create_service_state(self, *, name: str, description: str) -> EstadoServicio:
