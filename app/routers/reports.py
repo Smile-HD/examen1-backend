@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.dependencies.auth import require_web_superuser, AuthenticatedUser
-from app.core.database import get_db
+from app.database import get_db
 from app.services.Admin.report_service import AdminReportService
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
