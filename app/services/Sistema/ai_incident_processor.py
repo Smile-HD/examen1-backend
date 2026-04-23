@@ -272,7 +272,7 @@ def _transcribe_audio_with_vosk(*, audio_url: str, audio_bytes: bytes) -> str | 
         logger.warning("[IA] No se pudo transcribir audio con Vosk: %s", exc)
         return None
 
-
+# funcion q transcribe, pero este es como el "header"
 def _transcribe_audio(audio_url: str | None) -> str | None:
     # Transcribe audio usando un unico proveedor soportado: Vosk.
     transcription_enabled_flag = os.getenv(
@@ -416,6 +416,8 @@ def _analyze_image_with_hf(image_url: str | None) -> str | None:
 
     return None
 
+
+# IMPORTANTE, FUNCION PRINCIPAL DE DECISION
 
 def _infer_problem_type(*sources: str | None) -> str | None:
     # Clasificador heuristico multimodal con deduccion por catalogo de servicios.

@@ -143,7 +143,12 @@ def create_payment(
 
     existing_payment = repository.get_payment_by_incident(incident.id)
     if existing_payment:
-        raise PaymentAlreadyExistsError("Ya existe un pago creado para este incidente.")
+        # Permitir crear nuevo pago solo si el anterior fue rechazado
+        if existing_payment.status != PAYMENT_STATUS_REJECTED:
+            raise PaymentAlreadyExistsError(
+                f"Ya existe un pago en estado '{existing_payment.status}' para este incidente. "
+                "Solo puedes crear un nuevo pago si el anterior fue rechazado."
+            )
 
     amount = round(float(payload.amount), 2)
     commission = _calculate_commission(amount)
@@ -233,6 +238,10 @@ def upload_payment_proof(
     if payment.status == PAYMENT_STATUS_CONFIRMED:
         raise InvalidPaymentStateError("El pago ya fue confirmado y no admite nuevos comprobantes.")
 
+    # Permitir reenvío si está rechazado o en verificación
+    if payment.status not in [PAYMENT_STATUS_PENDING, PAYMENT_STATUS_VERIFICATION, PAYMENT_STATUS_REJECTED]:
+        raise InvalidPaymentStateError(f"No se puede subir comprobante en estado {payment.status}.")
+
     if not file_bytes:
         raise InvalidPaymentStateError("El comprobante recibido esta vacio.")
 
@@ -240,6 +249,8 @@ def upload_payment_proof(
     proof_file_name = f"payment_proof_{payment.id}_{uuid4().hex}{extension}"
     save_payment_proof_image(file_bytes, proof_file_name)
     proof_image_url, proof_image_url_absolute = build_payment_proof_urls(base_url, proof_file_name)
+
+    action_description = "subio comprobante" if payment.status != PAYMENT_STATUS_REJECTED else "reenvio comprobante"
 
     try:
         repository.update_payment(
@@ -252,8 +263,8 @@ def upload_payment_proof(
             incidente_id=payment.incident_id,
             taller_id=payment.taller_id,
             cliente_id=payment.user_id,
-            accion="comprobante_subido",
-            descripcion=f"Cliente {user_id} subio comprobante para pago {payment.id}.",
+            accion="comprobante_subido" if payment.status != PAYMENT_STATUS_REJECTED else "comprobante_reenviado",
+            descripcion=f"Cliente {user_id} {action_description} para pago {payment.id}.",
             actor_usuario_id=user_id,
         )
 
@@ -429,6 +440,37 @@ def list_workshop_payments(
 ) -> PaymentListResponse:
     repository = PaymentRepository(db)
     payments = repository.list_payments_for_workshop(taller_id)
+
+    user_ids = {int(payment.user_id) for payment in payments}
+    workshop_ids = {int(payment.taller_id) for payment in payments}
+
+    users_by_id = {int(user.id): user for user in repository.list_users_by_ids(user_ids)}
+    workshops_by_id = {int(workshop.id): workshop for workshop in repository.list_workshops_by_ids(workshop_ids)}
+
+    items: list[PaymentListItemResponse] = []
+    for payment in payments:
+        user = users_by_id.get(int(payment.user_id))
+        workshop = workshops_by_id.get(int(payment.taller_id))
+        items.append(
+            _build_payment_list_item(
+                payment=payment,
+                base_url=base_url,
+                user_name=user.nombre if user else None,
+                workshop_name=workshop.nombre if workshop else None,
+            )
+        )
+
+    return PaymentListResponse(total=len(items), payments=items)
+
+
+def list_client_payments(
+    *,
+    user_id: int,
+    base_url: str,
+    db: Session,
+) -> PaymentListResponse:
+    repository = PaymentRepository(db)
+    payments = repository.list_payments_for_client(user_id)
 
     user_ids = {int(payment.user_id) for payment in payments}
     workshop_ids = {int(payment.taller_id) for payment in payments}

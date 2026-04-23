@@ -58,6 +58,14 @@ class PaymentRepository:
             .all()
         )
 
+    def list_payments_for_client(self, user_id: int) -> list[Payment]:
+        return (
+            self.db.query(Payment)
+            .filter(Payment.user_id == user_id)
+            .order_by(Payment.created_at.desc())
+            .all()
+        )
+
     def list_all_payments(self) -> list[Payment]:
         return self.db.query(Payment).order_by(Payment.created_at.desc()).all()
 

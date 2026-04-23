@@ -8,6 +8,7 @@ from app.controllers.payment_controller import (
     confirm_payment_controller,
     create_payment_controller,
     list_admin_payment_summary_controller,
+    list_client_payments_controller,
     list_workshop_payments_controller,
     reject_payment_controller,
     upload_payment_proof_controller,
@@ -129,6 +130,23 @@ def list_workshop_payments_endpoint(
 ) -> PaymentListResponse:
     return list_workshop_payments_controller(
         taller_id=current_user.user_id,
+        base_url=str(request.base_url).rstrip("/"),
+        db=db,
+    )
+
+
+@router.get(
+    "/client",
+    response_model=PaymentListResponse,
+    status_code=status.HTTP_200_OK,
+)
+def list_client_payments_endpoint(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_mobile_cliente),
+    db: Session = Depends(get_db),
+) -> PaymentListResponse:
+    return list_client_payments_controller(
+        user_id=current_user.user_id,
         base_url=str(request.base_url).rstrip("/"),
         db=db,
     )

@@ -8,7 +8,7 @@ from app.models.vehicle_schemas import (
     VehicleRegistrationRequest,
     VehicleRegistrationResponse,
 )
-from app.services.vehicle_service import (
+from app.services.Cliente.vehicle_service import (
     VehicleAlreadyExistsError,
     list_client_vehicles,
     register_vehicle,

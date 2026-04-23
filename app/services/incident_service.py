@@ -37,9 +37,9 @@ from app.models.incident_schemas import (
     TechnicianRequestRejectResponse,
 )
 from app.repositories.incident_repository import IncidentRepository
-from app.services.push_service import send_client_push_best_effort
-from app.services.ai_incident_processor import AIIncidentProcessingResult, process_incident_payload_for_ai
-from app.services.workshop_assignment_service import build_incident_candidates
+from app.services.Cliente.push_service import send_client_push_best_effort
+from app.services.Sistema.ai_incident_processor import AIIncidentProcessingResult, process_incident_payload_for_ai
+from app.services.Sistema.workshop_assignment_service import build_incident_candidates
 
 
 class VehicleNotOwnedError(Exception):
@@ -332,7 +332,7 @@ def _get_live_technician_location(
             "actualizada_en": None,
         }
 
-    from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
+    from app.services.Tecnico.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
 
     memory_entry = ACTIVE_TECHNICIAN_LOCATIONS.get(tecnico_id)
     db_entry = repository.get_technician_location(tecnico_id) if repository else None
@@ -1392,7 +1392,7 @@ def reject_service_by_technician(
             actor_usuario_id=tecnico_id,
         )
 
-        from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
+        from app.services.Tecnico.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
 
         if technician_id in ACTIVE_TECHNICIAN_LOCATIONS:
             current = ACTIVE_TECHNICIAN_LOCATIONS[technician_id]
@@ -1457,7 +1457,7 @@ def update_technician_location(
                 "La solicitud no pertenece al tecnico autenticado."
             )
 
-    from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS, TechnicianLocationInMemory
+    from app.services.Tecnico.location_cache import ACTIVE_TECHNICIAN_LOCATIONS, TechnicianLocationInMemory
 
     now = datetime.now()
 

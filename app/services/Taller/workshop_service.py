@@ -605,7 +605,7 @@ def list_workshop_technician_locations(
     repository = WorkshopRepository(db)
     technicians = repository.list_workshop_technicians(taller_id)
     
-    from app.services.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
+    from app.services.Tecnico.location_cache import ACTIVE_TECHNICIAN_LOCATIONS
     
     result: list[WorkshopTechnicianLocationItem] = []
     
@@ -660,7 +660,7 @@ def upload_workshop_qr(
     with target_path.open("wb") as f:
         f.write(file_bytes)
 
-    qr_relative_url = f"/payments/qr/{qr_file_name}"
+    qr_relative_url = f"/api/v1/payments/qr/{qr_file_name}"
     qr_absolute_url = f"{base_url.rstrip('/')}{qr_relative_url}"
 
     try:

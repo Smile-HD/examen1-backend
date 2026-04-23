@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.push_schemas import PushTokenRegisterRequest, PushTokenRegisterResponse
-from app.services.push_service import register_client_push_token
+from app.services.Cliente.push_service import register_client_push_token
 
 
 def register_client_push_token_controller(

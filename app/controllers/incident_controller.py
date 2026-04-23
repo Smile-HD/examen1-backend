@@ -69,7 +69,7 @@ def report_incident_controller(
     cliente_id: int,
     db: Session,
 ) -> IncidentReportResponse:
-    # Traduce errores de negocio del CU4 a respuestas HTTP claras para la app movil.
+    # Traduce errores de negocio a respuestas HTTP claras para la app movil.
     try:
         return report_incident(payload, cliente_id=cliente_id, db=db)
     except LocationRequiredError as exc:

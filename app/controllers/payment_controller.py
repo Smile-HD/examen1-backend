@@ -12,7 +12,7 @@ from app.models.payment_schemas import (
     PaymentRejectResponse,
     PaymentUploadProofResponse,
 )
-from app.services.payment_service import (
+from app.services.Admin.payment_service import (
     IncidentNotFoundError,
     IncidentNotOwnedError,
     IncidentWithoutWorkshopError,
@@ -23,6 +23,7 @@ from app.services.payment_service import (
     confirm_payment,
     create_payment,
     list_admin_payment_summary,
+    list_client_payments,
     list_workshop_payments,
     reject_payment,
     upload_payment_proof,
@@ -113,6 +114,15 @@ def list_workshop_payments_controller(
     db: Session,
 ) -> PaymentListResponse:
     return list_workshop_payments(taller_id=taller_id, base_url=base_url, db=db)
+
+
+def list_client_payments_controller(
+    *,
+    user_id: int,
+    base_url: str,
+    db: Session,
+) -> PaymentListResponse:
+    return list_client_payments(user_id=user_id, base_url=base_url, db=db)
 
 
 def list_admin_payment_summary_controller(

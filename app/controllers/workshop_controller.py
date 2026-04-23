@@ -19,7 +19,7 @@ from app.models.workshop_schemas import (
     WorkshopVehicleResponse,
     WorkshopVehicleUpdateRequest,
 )
-from app.services.workshop_service import (
+from app.services.Taller.workshop_service import (
     InvalidWorkshopServiceSelectionError,
     TechnicianAlreadyAssignedError,
     TechnicianEmailMismatchError,
@@ -211,7 +211,7 @@ def upload_workshop_qr_controller(
     base_url: str,
     db: Session,
 ) -> dict:
-    from app.services.workshop_service import upload_workshop_qr
+    from app.services.Taller.workshop_service import upload_workshop_qr
     try:
         return upload_workshop_qr(
             taller_id=taller_id,
