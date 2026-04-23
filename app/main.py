@@ -7,6 +7,7 @@ from app.routers.health import router as health_router
 from app.routers.incidents import router as incidents_router
 from app.routers.payments import router as payments_router
 from app.routers.push_notifications import router as push_notifications_router
+from app.routers.reports import router as reports_router
 from app.routers.users import router as users_router
 from app.routers.vehicles import router as vehicles_router
 from app.routers.workshop import router as workshop_router
@@ -28,5 +29,6 @@ app.include_router(vehicles_router)
 app.include_router(incidents_router)
 app.include_router(payments_router)
 app.include_router(commissions_router)
+app.include_router(reports_router)
 app.include_router(push_notifications_router)
 app.include_router(workshop_router)
