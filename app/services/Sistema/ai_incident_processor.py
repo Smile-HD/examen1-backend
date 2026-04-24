@@ -421,30 +421,36 @@ def _analyze_image_with_hf(image_url: str | None) -> str | None:
 
 def _infer_problem_type(*sources: str | None) -> str | None:
     # Clasificador heuristico multimodal con deduccion por catalogo de servicios.
+    # PRIORIDAD: Audio/Texto > Imagen (la imagen solo confirma, no decide)
     user_text = sources[0] if len(sources) > 0 else None
     audio_text = sources[1] if len(sources) > 1 else None
     image_summary = sources[2] if len(sources) > 2 else None
 
     text_blob = _normalize_text(" ".join(part for part in [user_text, audio_text] if part))
     image_blob = _normalize_text(_extract_image_labels(image_summary))
-    merged_blob = f"{text_blob} {image_blob}".strip()
-    if not merged_blob:
+    
+    # Si no hay texto ni audio, no podemos clasificar confiablemente
+    if not text_blob:
         return None
-
+    
     service_scores = {service: 0 for service in SERVICE_TO_PROBLEM}
 
-    # Peso mayor para audio/texto; imagen apoya la decision.
+    # PRIORIDAD ALTA: Audio y texto son la fuente principal (peso 5)
     for service, keywords in SERVICE_TEXT_KEYWORDS.items():
         if _has_any(text_blob, keywords):
-            service_scores[service] += 3
+            service_scores[service] += 5
 
+    # PRIORIDAD BAJA: Imagen solo como confirmación (peso 1, solo si ya hay match en texto)
+    # La imagen NO puede decidir por sí sola, solo refuerza
     for service, keywords in SERVICE_IMAGE_KEYWORDS.items():
         if _has_any(image_blob, keywords):
-            service_scores[service] += 2
+            # Solo suma puntos si ya hay algo de score en texto/audio
+            if service_scores[service] > 0:
+                service_scores[service] += 1
 
-    # Reglas combinadas especificas (audio+imagen o texto+imagen).
-    wheel_signal = _has_any(merged_blob, ["wheel", "tire", "tyre", "rueda", "llanta", "neumatic"])
-    puncture_signal = _has_any(merged_blob, ["pinch", "ponch", "pinchado", "ponchado", "revent", "desinflad", "flat"])
+    # Reglas combinadas especificas (solo basadas en texto/audio, NO en imagen).
+    wheel_signal = _has_any(text_blob, ["wheel", "tire", "tyre", "rueda", "llanta", "neumatic"])
+    puncture_signal = _has_any(text_blob, ["pinch", "ponch", "pinchado", "ponchado", "revent", "desinflad", "flat"])
     if wheel_signal and puncture_signal:
         service_scores["llanta"] += 5
         service_scores["vulcanizado"] += 4
@@ -453,25 +459,25 @@ def _infer_problem_type(*sources: str | None) -> str | None:
         text_blob,
         ["humo", "sobrecal", "accidente", "choque"],
     ):
-        service_scores["bateria"] += 3
+        service_scores["bateria"] += 4
         service_scores["auxilio_electrico"] += 2
 
     if _has_any(text_blob, ["llave", "cerradura", "cerrado", "bloqueado", "inmovilizador"]) and _has_any(
         text_blob,
         ["perdi", "adentro", "no abre", "atascad", "abrir"],
     ):
-        service_scores["cerrajeria"] += 4
-        service_scores["apertura"] += 3
+        service_scores["cerrajeria"] += 5
+        service_scores["apertura"] += 4
 
     if _has_any(text_blob, ["choque", "colision", "accidente", "impacto", "airbag"]):
-        service_scores["accidentes"] += 4
+        service_scores["accidentes"] += 5
         service_scores["carroceria"] += 3
 
     if _has_any(text_blob, ["remolque", "grua", "arrastre", "tow", "towing", "plataforma"]):
-        service_scores["grua"] += 4
+        service_scores["grua"] += 5
 
     if _has_any(text_blob, ["humo", "sobrecal", "temperatura alta", "radiador", "motor"]):
-        service_scores["motor"] += 4
+        service_scores["motor"] += 5
 
     # Fallback suave a mecanica_general cuando hay evidencia vaga.
     if _has_any(text_blob, ["falla", "averia", "mecanico", "revision"]) and max(service_scores.values()) == 0:
@@ -485,8 +491,10 @@ def _infer_problem_type(*sources: str | None) -> str | None:
             best_service = service
             best_score = score
 
-    if not best_service or best_score <= 0:
-        return "otros"
+    # Umbral mínimo: necesita al menos 3 puntos para clasificar
+    # (equivale a 1 match fuerte en texto/audio, la imagen sola no es suficiente)
+    if not best_service or best_score < 3:
+        return None
 
     return SERVICE_TO_PROBLEM.get(best_service, "otros")
 
@@ -526,34 +534,80 @@ def _is_information_sufficient(
     has_user_text = bool(user_text and len(user_text) >= 10)
     image_analysis_enabled = _is_enabled(os.getenv("AI_ENABLE_HF_IMAGE"))
     has_image_signal = bool(image_url and (image_summary or not image_analysis_enabled))
+    
+    # Verificar si se proporcionaron las 3 evidencias
+    has_audio_provided = bool(audio_url)
+    has_image_provided = bool(image_url)
+    has_text_provided = bool(user_text)
+    has_three_evidences_provided = has_audio_provided and has_image_provided and has_text_provided
+    
+    # Verificar si las 3 evidencias fueron procesadas exitosamente
     has_three_modalities = bool(
         audio_url
         and image_url
         and (has_user_text or has_transcribed_audio)
+        and has_image_signal
     )
 
+    # Si no se dedujo el problema
     if not deduced_problem:
-        if has_three_modalities:
+        # Solo permitir continuar si se proporcionaron las 3 evidencias
+        if has_three_evidences_provided:
             return (
                 True,
                 "No se pudo deducir el tipo exacto del problema incluso con evidencia completa (audio, imagen y texto). El incidente continuara con clasificacion general.",
             )
+        # Si faltan evidencias, solicitar más información
+        missing_evidences = []
+        if not has_audio_provided:
+            missing_evidences.append("audio")
+        if not has_image_provided:
+            missing_evidences.append("imagen")
+        if not has_text_provided:
+            missing_evidences.append("descripción de texto")
+        
         return (
             False,
-            "No se pudo deducir el tipo de problema. Envia evidencia mas clara (audio, imagen y descripcion) para continuar.",
+            f"No se pudo deducir el tipo de problema. Envia las siguientes evidencias faltantes: {', '.join(missing_evidences)}.",
         )
 
+    # Si el problema es "otros", solo permitir si se tienen las 3 evidencias completas
+    if problem_type == "otros":
+        if not has_three_evidences_provided:
+            missing_evidences = []
+            if not has_audio_provided:
+                missing_evidences.append("audio")
+            if not has_image_provided:
+                missing_evidences.append("imagen")
+            if not has_text_provided:
+                missing_evidences.append("descripción de texto")
+            
+            return (
+                False,
+                f"No se logró identificar el problema específico. Para clasificarlo como 'otros', necesitamos todas las evidencias. Faltan: {', '.join(missing_evidences)}.",
+            )
+        
+        # Verificar que las evidencias hayan sido procesadas correctamente
+        if has_audio_provided and not has_transcribed_audio:
+            return (
+                False,
+                "El audio no fue comprensible. Reenvia un audio más claro.",
+            )
+        
+        if has_image_provided and image_analysis_enabled and not image_summary:
+            return (
+                False,
+                "No se pudo analizar la imagen. Reenvia una foto más clara.",
+            )
+        
+        # Si se tienen las 3 evidencias y fueron procesadas, permitir continuar como "otros"
+        return (True, None)
+
+    # Para problemas específicos (no "otros"), validar evidencias
     if image_url and image_analysis_enabled and not image_summary:
         return (
             False,
             "No se pudo analizar la imagen. Reenvia una foto mas clara o agrega mas detalle por texto.",
-        )
-
-    if problem_type == "otros" and not has_user_text and not has_transcribed_audio:
-        contexto_fuente = "imagen" if image_url else "información"
-        return (
-            False,
-            f"No logramos interpretar un problema vehicular claro a partir de la {contexto_fuente} proporcionada. Por favor, sé más específico o agrega texto.",
         )
 
     if not has_transcribed_audio and not has_user_text and not has_image_signal:
