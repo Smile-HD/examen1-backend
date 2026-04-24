@@ -33,6 +33,7 @@ from app.dependencies.auth import (
     require_mobile_cliente,
     require_mobile_tecnico,
     require_web_taller,
+    require_web_superuser,
 )
 from app.core.evidence_storage import (
     allowed_extensions_for_kind,
@@ -464,3 +465,68 @@ def reject_technician_service_endpoint(
         tecnico_id=current_user.user_id,
         db=db,
     )
+
+
+@router.get(
+    "/admin/historial",
+    status_code=status.HTTP_200_OK,
+)
+def get_all_incidents_history_endpoint(
+    current_user: AuthenticatedUser = Depends(require_web_superuser),
+    db: Session = Depends(get_db),
+):
+    """
+    Obtiene el historial completo de todos los incidentes del sistema.
+    Solo accesible para superusuarios.
+    """
+    from app.repositories.report_repository import ReportRepository
+    from app.models.user import Usuario, Taller
+    from app.models.incident import Incidente, EstadoServicio
+    
+    repository = ReportRepository(db)
+    
+    # Obtener todos los incidentes ordenados por fecha (más recientes primero)
+    incidents = (
+        db.query(Incidente)
+        .order_by(Incidente.fecha_hora.desc())
+        .all()
+    )
+    
+    # Obtener información relacionada
+    user_ids = {inc.cliente_id for inc in incidents}
+    taller_ids = {inc.taller_id for inc in incidents if inc.taller_id}
+    estado_ids = {inc.estado_servicio_id for inc in incidents}
+    
+    users = {u.id: u for u in db.query(Usuario).filter(Usuario.id.in_(user_ids)).all()}
+    talleres = {t.id: t for t in db.query(Taller).filter(Taller.id.in_(taller_ids)).all()}
+    estados = {e.id: e for e in db.query(EstadoServicio).filter(EstadoServicio.id.in_(estado_ids)).all()}
+    
+    # Construir respuesta
+    result = []
+    for inc in incidents:
+        user = users.get(inc.cliente_id)
+        taller = talleres.get(inc.taller_id) if inc.taller_id else None
+        estado = estados.get(inc.estado_servicio_id)
+        
+        result.append({
+            "incident_id": inc.id,
+            "client_id": inc.cliente_id,
+            "client_name": user.nombre if user else f"Cliente #{inc.cliente_id}",
+            "client_email": user.correo if user else None,
+            "vehicle_plate": inc.vehiculo_placa,
+            "workshop_id": inc.taller_id,
+            "workshop_name": taller.nombre if taller else None,
+            "status": estado.nombre if estado else "desconocido",
+            "problem_type": inc.tipo_problema,
+            "description": inc.descripcion,
+            "location": inc.ubicacion,
+            "latitude": float(inc.latitud) if inc.latitud else None,
+            "longitude": float(inc.longitud) if inc.longitud else None,
+            "priority": inc.prioridad,
+            "created_at": inc.fecha_hora,
+        })
+    
+    return {
+        "total": len(result),
+        "incidents": result
+    }
